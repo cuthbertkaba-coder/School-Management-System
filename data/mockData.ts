@@ -92,7 +92,7 @@ const generateStudent = (id: number, studentClass: string): Student => {
 };
 
 export const mockStudents: Student[] = CLASSES.flatMap(c => 
-    Array.from({ length: 15 }, (_, i) => generateStudent(CLASSES.indexOf(c) * 15 + i, c))
+    Array.from({ length: 2 }, (_, i) => generateStudent(CLASSES.indexOf(c) * 2 + i, c))
 );
 
 

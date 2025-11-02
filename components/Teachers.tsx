@@ -1,9 +1,10 @@
 
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Staff, User, Role, StaffCategory, SchoolDocument, Settings } from '../types';
 import { mockStaff } from '../data/mockData';
 import { AdminManageAccountModal } from './Settings';
-import { CLASSES } from '../constants';
+import { CLASSES, SCHOOL_NAME } from '../constants';
 
 const DEFAULT_AVATAR_URL = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NkZDZlMyI+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTguNjg1IDE5LjA5N0E5LjcyMyA5LjcyMyAwIDAwMjEuNzUgMTJjMC01LjM4NS00LjM2NS05Ljc1LTkuNzUtOS43NVM S5MjUgNi42MTUgMi4yNSAxMmE5LjcyMyA5LjcyMyAwIDAwMy4wNjUgNy4wOTdBOTcxNiA5LjcxNiAwIDAwMTIgMjEuNzVhOS4xMTYgOS43MTYgMCAwMDYuNjg1LTIuNjUzem0tMTIuNTQtMS4yODVBNy40ODYgNy40ODYgMCAwMTEyIDE1YTcuNDg2IDcuNDg2IDAgMDE1Ljg1NSAyLjgxMkE4LjIyNCA4LjIyNCAwIDAxMTIgMjAuMjVhOC4yMjQgOC4yMjQgMCAwMS01Ljg1NS0yLjQzOHpNM TcuNzUgOWEzLjc1IDMuNzUgMCAxMS03LjUgMCAzLjc1IDMuNzUgMCAwMTcuNSAwem0iIGNsaXAtcnVsZT0iZXZlbm9kZCIgLz48L3N2Zz4=";
 
@@ -64,14 +65,24 @@ const ConfirmationModal: React.FC<{
 );
 
 
-const StaffCard: React.FC<{ staff: Staff, onSelect: (staff: Staff) => void }> = ({ staff, onSelect }) => (
-    <div onClick={() => onSelect(staff)} className="bg-white p-4 rounded-lg shadow-sm hover:shadow-lg transition-shadow cursor-pointer flex items-center space-x-4">
+const StaffCard: React.FC<{ staff: Staff, onSelect: (staff: Staff) => void, onDeleteRequest: (staff: Staff) => void }> = ({ staff, onSelect, onDeleteRequest }) => (
+    <div onClick={() => onSelect(staff)} className="relative bg-white p-4 rounded-lg shadow-sm hover:shadow-lg transition-shadow cursor-pointer flex items-center space-x-4">
         <img src={staff.photoUrl} alt={staff.name} className="w-16 h-16 rounded-full object-cover" />
         <div>
             <p className="font-bold text-slate-800">{staff.name}</p>
             <p className="text-sm text-slate-500">{staff.staffNumber}</p>
             <p className="text-sm text-blue-600 font-medium">{staff.assignedClass || staff.assignedSubjects?.join(', ')}</p>
         </div>
+        <button
+            onClick={(e) => {
+                e.stopPropagation();
+                onDeleteRequest(staff);
+            }}
+            className="absolute top-2 right-2 p-1 text-slate-400 hover:text-red-600 hover:bg-red-100 rounded-full transition-colors no-print"
+            aria-label={`Delete ${staff.name}`}
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+        </button>
     </div>
 );
 
@@ -252,6 +263,16 @@ const StaffDetails: React.FC<{
                                    {renderField("Emergency Contact Phone", editableStaff.emergencyContact.phone, 'emergencyContact.phone', 'tel')}
                                    <div className="sm:col-span-2">{renderField('Assigned School Roles', editableStaff.schoolRoles, 'schoolRoles', 'textarea')}</div>
 
+                                    {!isEditing && (
+                                        <div className="sm:col-span-2 no-print">
+                                            <strong>Actions:</strong>
+                                            <div className="mt-2 space-x-2">
+                                                <a href={`sms:${staff.contact}`} className="text-xs bg-slate-200 text-slate-700 px-3 py-1 rounded-md hover:bg-slate-300 transition-colors">Send SMS</a>
+                                                <a href={`mailto:${staff.email}?subject=Message from ${SCHOOL_NAME}`} className="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-md hover:bg-blue-200 transition-colors">Send Email</a>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {editableStaff.category === StaffCategory.Teaching && (
                                         <>
                                             <div className="sm:col-span-2"><hr className="my-2" /></div>
@@ -344,7 +365,7 @@ const StaffDetails: React.FC<{
              {isDeleteModalOpen && (
                 <ConfirmationModal
                     title="Delete Staff Member"
-                    message={<>Are you sure you want to permanently delete <strong>{staff.name}</strong>? This action cannot be undone.</>}
+                    message={<>Are you sure you want to permanently delete <strong>{staff.name}</strong>? This action will also delete their user account and cannot be undone.</>}
                     confirmText="Delete"
                     confirmClass="bg-red-600 hover:bg-red-700"
                     onConfirm={() => { onDelete(staff.id); setDeleteModalOpen(false); }}
@@ -495,6 +516,7 @@ export const StaffPage: React.FC<{
     const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
     const [activeCategory, setActiveCategory] = useState<StaffCategory>(StaffCategory.Teaching);
     const [isAddModalOpen, setAddModalOpen] = useState(false);
+    const [staffToDelete, setStaffToDelete] = useState<Staff | null>(null);
 
     const handleArchiveStaff = (staffId: string) => {
         const staffToUpdate = staff.find(s => s.id === staffId);
@@ -554,11 +576,24 @@ export const StaffPage: React.FC<{
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {filteredStaff.map(s => (
-                    <StaffCard key={s.id} staff={s} onSelect={setSelectedStaff} />
+                    <StaffCard key={s.id} staff={s} onSelect={setSelectedStaff} onDeleteRequest={setStaffToDelete} />
                 ))}
             </div>
             {filteredStaff.length === 0 && <p className="text-center text-slate-500 mt-8">No {viewMode} staff found in this category.</p>}
             {isAddModalOpen && <AddStaffModal onClose={() => setAddModalOpen(false)} onAddStaff={onAddStaffAndUser} allStaff={staff} />}
+            {staffToDelete && (
+                <ConfirmationModal
+                    title="Delete Staff Member"
+                    message={<>Are you sure you want to permanently delete <strong>{staffToDelete.name}</strong>? This action will also delete their associated user account if one exists, and cannot be undone.</>}
+                    confirmText="Delete"
+                    confirmClass="bg-red-600 hover:bg-red-700"
+                    onConfirm={() => {
+                        onDeleteStaff(staffToDelete.id);
+                        setStaffToDelete(null);
+                    }}
+                    onClose={() => setStaffToDelete(null)}
+                />
+            )}
         </div>
     );
 };

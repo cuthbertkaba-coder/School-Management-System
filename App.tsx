@@ -205,18 +205,20 @@ const App: React.FC = () => {
         setStaff(prev => prev.map(s => s.id === updatedStaff.id ? updatedStaff : s));
     };
     
+    const handleDeleteStudent = (studentId: string) => {
+        setStudents(prev => prev.filter(s => s.id !== studentId));
+    };
+
     const handleDeleteStaff = (staffId: string) => {
         const staffToDelete = staff.find(s => s.id === staffId);
         if (!staffToDelete) return;
 
-        if (window.confirm(`Are you sure you want to permanently delete ${staffToDelete.name}? This will also delete their user account.`)) {
-            setStaff(prev => prev.filter(s => s.id !== staffId));
-            const associatedUser = users.find(u => u.staffId === staffId);
-            if (associatedUser) {
-                setUsers(prev => prev.filter(u => u.id !== associatedUser.id));
-            }
-            alert(`Staff member ${staffToDelete.name} and their user account have been deleted.`);
+        setStaff(prev => prev.filter(s => s.id !== staffId));
+        const associatedUser = users.find(u => u.staffId === staffId);
+        if (associatedUser) {
+            setUsers(prev => prev.filter(u => u.id !== associatedUser.id));
         }
+        alert(`Staff member ${staffToDelete.name} and their user account have been deleted.`);
     };
 
 
@@ -365,7 +367,7 @@ const App: React.FC = () => {
             case Page.Dashboard:
                 return <Dashboard user={user as User} setCurrentPage={(p) => setCurrentPage(p)} academicYear={settings.academicYear} currentTerm={settings.currentTerm} />;
             case Page.Students:
-                return <StudentsPage user={user as User} students={students} onUpdateStudent={handleStudentUpdate} onAddStudent={handleAddStudent} onAdminAccountChange={handleAdminAccountUpdate} academicYear={settings.academicYear} currentTerm={settings.currentTerm} />;
+                return <StudentsPage user={user as User} students={students} onUpdateStudent={handleStudentUpdate} onAddStudent={handleAddStudent} onDeleteStudent={handleDeleteStudent} onAdminAccountChange={handleAdminAccountUpdate} academicYear={settings.academicYear} currentTerm={settings.currentTerm} />;
             case Page.Staff:
                 return <StaffPage user={user as User} staff={staff} users={users} settings={settings} onUpdateStaff={handleStaffUpdate} onAddStaffAndUser={handleAddStaffAndUser} onDeleteStaff={handleDeleteStaff} onAdminAccountChange={handleAdminAccountUpdate} />;
             case Page.ClassRecords:

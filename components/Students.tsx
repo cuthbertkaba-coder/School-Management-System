@@ -262,14 +262,24 @@ const AddStudentModal: React.FC<{
   );
 };
 
-const StudentCard: React.FC<{ student: Student, onSelect: (student: Student) => void }> = ({ student, onSelect }) => (
-    <div onClick={() => onSelect(student)} className="bg-white p-4 rounded-lg shadow-sm hover:shadow-lg transition-shadow cursor-pointer flex items-center space-x-4">
+const StudentCard: React.FC<{ student: Student, onSelect: (student: Student) => void, onDeleteRequest: (student: Student) => void }> = ({ student, onSelect, onDeleteRequest }) => (
+    <div onClick={() => onSelect(student)} className="relative bg-white p-4 rounded-lg shadow-sm hover:shadow-lg transition-shadow cursor-pointer flex items-center space-x-4">
         <img src={student.photoUrl} alt={student.name} className="w-16 h-16 rounded-full object-cover" />
         <div>
             <p className="font-bold text-slate-800">{student.name}</p>
             <p className="text-sm text-slate-500">{student.id}</p>
             <p className="text-sm text-slate-500">{student.currentClass}</p>
         </div>
+        <button
+            onClick={(e) => {
+                e.stopPropagation();
+                onDeleteRequest(student);
+            }}
+            className="absolute top-2 right-2 p-1 text-slate-400 hover:text-red-600 hover:bg-red-100 rounded-full transition-colors no-print"
+            aria-label={`Delete ${student.name}`}
+        >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+        </button>
     </div>
 );
 
@@ -874,16 +884,18 @@ export const Students: React.FC<{
     students: Student[], 
     onUpdateStudent: (student: Student) => void, 
     onAddStudent: (student: Student) => void, 
+    onDeleteStudent: (studentId: string) => void,
     onAdminAccountChange: (userId: string, newUsername: string, newPassword?: string) => void,
     academicYear: string, 
     currentTerm: string 
-}> = ({ user, students: allStudents, onUpdateStudent, onAddStudent, onAdminAccountChange, academicYear, currentTerm }) => {
+}> = ({ user, students: allStudents, onUpdateStudent, onAddStudent, onDeleteStudent, onAdminAccountChange, academicYear, currentTerm }) => {
     const [students, setStudents] = useState<Student[]>(allStudents);
     const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
     const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedClass, setSelectedClass] = useState('All');
     const [isAddModalOpen, setAddModalOpen] = useState(false);
+    const [studentToDelete, setStudentToDelete] = useState<Student | null>(null);
 
     useEffect(() => {
         setStudents(allStudents);
@@ -900,11 +912,6 @@ export const Students: React.FC<{
     const handleArchiveStudent = (studentId: string) => {
         const student = students.find(s => s.id === studentId);
         if (student) onUpdateStudent({ ...student, status: 'archived' });
-        setSelectedStudent(null);
-    };
-
-    const handleDeleteStudent = (studentId: string) => {
-        setStudents(prev => prev.filter(s => s.id !== studentId)); // This is a destructive action, usually not recommended.
         setSelectedStudent(null);
     };
 
@@ -947,7 +954,7 @@ export const Students: React.FC<{
                     onUpdateStudent={onUpdateStudent}
                     onPromoteStudent={handlePromoteStudent}
                     onArchiveStudent={handleArchiveStudent}
-                    onDeleteStudent={handleDeleteStudent}
+                    onDeleteStudent={onDeleteStudent}
                     onAdminAccountChange={onAdminAccountChange}
                     academicYear={academicYear}
                     currentTerm={currentTerm}
@@ -987,11 +994,24 @@ export const Students: React.FC<{
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {filteredStudents.map(student => (
-                    <StudentCard key={student.id} student={student} onSelect={setSelectedStudent} />
+                    <StudentCard key={student.id} student={student} onSelect={setSelectedStudent} onDeleteRequest={setStudentToDelete} />
                 ))}
             </div>
              {filteredStudents.length === 0 && <p className="text-center text-slate-500 mt-8">No {viewMode} students found.</p>}
             {isAddModalOpen && <AddStudentModal onClose={() => setAddModalOpen(false)} onSave={handleAddStudent} students={students} />}
+            {studentToDelete && (
+                <ConfirmationModal
+                    title="Delete Student"
+                    message={<>Are you sure you want to permanently delete <strong>{studentToDelete.name}</strong>? This action cannot be undone.</>}
+                    confirmText="Delete"
+                    confirmClass="bg-red-600 hover:bg-red-700"
+                    onConfirm={() => {
+                        onDeleteStudent(studentToDelete.id);
+                        setStudentToDelete(null);
+                    }}
+                    onClose={() => setStudentToDelete(null)}
+                />
+            )}
         </div>
     );
 };
