@@ -2,7 +2,9 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { Page, User, Role, Student, Settings } from '../types';
-import { CLASSES } from '../constants';
+import { CLASSES, SCHOOL_LOGO_URL, SCHOOL_NAME } from '../constants';
+import { getGradeInfo } from '../utils/auth';
+import { PrintableReportCardModal } from './Students';
 
 const AttendanceRegister: React.FC<{ students: Student[], isViewOnly: boolean }> = ({ students, isViewOnly }) => {
     return (
@@ -44,7 +46,7 @@ const ScoreEntryTable: React.FC<{
 
     const headers = scoreType === 'ca'
         ? ['Class Assignments & Tests (20)', 'Project/Practical Work (10)', 'CA Total (30)']
-        : ['Mid-Term (20)', 'End of Term (50)', 'Exam Total (70)', 'Final Total (100)'];
+        : ['Mid-Term (20)', 'End of Term (50)', 'Exam Total (70)', 'Final Total (100)', 'Grade'];
     
     const fields: ('classAssignments' | 'project' | 'midterm' | 'endOfTerm')[] = scoreType === 'ca' 
         ? ['classAssignments', 'project'] 
@@ -70,6 +72,8 @@ const ScoreEntryTable: React.FC<{
                         };
                         const caTotal = scores.classAssignments + scores.project;
                         const examTotal = scores.midterm + scores.endOfTerm;
+                        const finalTotal = caTotal + examTotal;
+                        const gradeInfo = getGradeInfo(finalTotal);
 
                         return (
                             <tr key={student.id} className="bg-white border-b hover:bg-slate-50">
@@ -85,11 +89,87 @@ const ScoreEntryTable: React.FC<{
                                         <td className="px-6 py-4"><input type="number" max="20" className="w-20 p-1 border rounded text-center bg-white focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100" disabled={isViewOnly} defaultValue={scores.midterm} onBlur={(e) => onScoreChange(student.id, subject, 'midterm', parseInt(e.target.value) || 0)}/></td>
                                         <td className="px-6 py-4"><input type="number" max="50" className="w-20 p-1 border rounded text-center bg-white focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100" disabled={isViewOnly} defaultValue={scores.endOfTerm} onBlur={(e) => onScoreChange(student.id, subject, 'endOfTerm', parseInt(e.target.value) || 0)}/></td>
                                         <td className="px-6 py-4 text-center font-bold text-blue-700">{examTotal}</td>
-                                        <td className="px-6 py-4 text-center font-extrabold bg-slate-100">{caTotal + examTotal}</td>
+                                        <td className="px-6 py-4 text-center font-extrabold bg-slate-100">{finalTotal}</td>
+                                        <td className="px-6 py-4 text-center font-bold bg-slate-100 text-slate-800">{gradeInfo.grade}</td>
                                     </>
                                 )}
                             </tr>
                         )
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+};
+
+const ReportGeneration: React.FC<{
+    students: Student[];
+    term: string;
+    onUpdateStudent: (student: Student) => void;
+    onViewReport: (student: Student) => void;
+}> = ({ students, term, onUpdateStudent, onViewReport }) => {
+
+    const handleCommentChange = (studentId: string, type: 'teacherComment' | 'headteacherComment', value: string) => {
+        const student = students.find(s => s.id === studentId);
+        if (!student) return;
+
+        let gradeForTerm = student.grades.find(g => g.term === term);
+        let updatedGrades = [...student.grades];
+        if (!gradeForTerm) {
+            gradeForTerm = { term, subjects: {}, average: 0, position: 0 };
+            updatedGrades.push(gradeForTerm);
+        }
+        
+        const finalGrades = updatedGrades.map(g => g.term === term ? { ...g, [type]: value } : g);
+        onUpdateStudent({ ...student, grades: finalGrades });
+    };
+    
+    const handlePromotionChange = (studentId: string, value: 'Promoted' | 'To Repeat' | 'On Probation') => {
+        const student = students.find(s => s.id === studentId);
+        if (!student) return;
+        let gradeForTerm = student.grades.find(g => g.term === term);
+        let updatedGrades = [...student.grades];
+        if (!gradeForTerm) {
+            gradeForTerm = { term, subjects: {}, average: 0, position: 0 };
+            updatedGrades.push(gradeForTerm);
+        }
+        const finalGrades = updatedGrades.map(g => g.term === term ? { ...g, promotionStatus: value } : g);
+        onUpdateStudent({ ...student, grades: finalGrades });
+    };
+
+    return (
+        <div className="overflow-x-auto bg-white rounded-lg shadow">
+            <table className="w-full text-sm text-left text-slate-500">
+                <thead className="text-xs text-slate-700 uppercase bg-slate-50">
+                    <tr>
+                        <th className="px-4 py-3">Student Name</th>
+                        <th className="px-4 py-3">Teacher's Comment</th>
+                        <th className="px-4 py-3">Headteacher's Comment</th>
+                        {term === 'Third Term' && <th className="px-4 py-3">Promotion Status</th>}
+                        <th className="px-4 py-3">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {students.map(student => {
+                        const gradeData = student.grades.find(g => g.term === term) || {};
+                        return (
+                            <tr key={student.id} className="bg-white border-b hover:bg-slate-50">
+                                <td className="px-4 py-2 font-medium text-slate-900">{student.name}</td>
+                                <td className="px-4 py-2"><textarea className="w-full p-1 border rounded bg-white focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100" defaultValue={gradeData.teacherComment} onBlur={e => handleCommentChange(student.id, 'teacherComment', e.target.value)} /></td>
+                                <td className="px-4 py-2"><textarea className="w-full p-1 border rounded bg-white focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100" defaultValue={gradeData.headteacherComment} onBlur={e => handleCommentChange(student.id, 'headteacherComment', e.target.value)} /></td>
+                                {term === 'Third Term' && (
+                                    <td className="px-4 py-2">
+                                        <select className="w-full p-1 border rounded" defaultValue={gradeData.promotionStatus} onChange={e => handlePromotionChange(student.id, e.target.value as any)}>
+                                            <option value="">Select...</option>
+                                            <option value="Promoted">Promoted</option>
+                                            <option value="To Repeat">To Repeat</option>
+                                            <option value="On Probation">On Probation</option>
+                                        </select>
+                                    </td>
+                                )}
+                                <td className="px-4 py-2"><button onClick={() => onViewReport(student)} className="text-blue-600 hover:underline">View Report</button></td>
+                            </tr>
+                        );
                     })}
                 </tbody>
             </table>
@@ -108,6 +188,7 @@ export const ClassManagement: React.FC<{
     const [activeTab, setActiveTab] = useState(initialPage === Page.ClassRecords ? 'attendance' : 'ca');
     const [selectedClass, setSelectedClass] = useState(CLASSES[0]);
     const [selectedSubject, setSelectedSubject] = useState('');
+    const [studentForReport, setStudentForReport] = useState<Student | null>(null);
 
     const isViewOnly = useMemo(() => user.role === Role.SMCChair, [user.role]);
 
@@ -223,8 +304,23 @@ export const ClassManagement: React.FC<{
                     />
                 )}
                 
-                {activeTab === 'reports' && <p className="text-center p-8 bg-white rounded-lg shadow">Report card generation module coming soon.</p>}
+                {activeTab === 'reports' && (
+                    <ReportGeneration 
+                        students={studentsInClass}
+                        term={settings.currentTerm}
+                        onUpdateStudent={onUpdateStudent}
+                        onViewReport={(student) => setStudentForReport(student)}
+                    />
+                )}
             </div>
+            {studentForReport && (
+                <PrintableReportCardModal
+                    student={studentForReport}
+                    onClose={() => setStudentForReport(null)}
+                    academicYear={settings.academicYear}
+                    currentTerm={settings.currentTerm}
+                />
+             )}
         </div>
     );
 };

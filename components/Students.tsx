@@ -1,9 +1,12 @@
+
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Student, StudentNote, User, Role, FeeItem, Discount, DiscountType, DISCOUNT_TYPES, SchoolDocument } from '../types';
+// Fix: Import `GradeScore` to be used for type casting.
+import { Student, StudentNote, User, Role, FeeItem, Discount, DiscountType, DISCOUNT_TYPES, SchoolDocument, GradeScore } from '../types';
 import { mockStudents } from '../data/mockData';
-import { CLASSES, SCHOOL_LOGO_URL, SCHOOL_NAME, SUBJECTS, SUBJECTS_JUNIOR } from '../constants';
-import { calculateFinancials } from '../utils/auth';
-import { AdminChangePasswordModal } from './Settings';
+// Fix: Remove duplicate `SCHOOL_MOTTO` import and add `SCHOOL_NAME`.
+import { CLASSES, SCHOOL_LOGO_URL, SCHOOL_MOTTO, SUBJECTS, SUBJECTS_JUNIOR, SCHOOL_NAME } from '../constants';
+import { calculateFinancials, getGradeInfo } from '../utils/auth';
+import { AdminManageAccountModal } from './Settings';
 
 const DEFAULT_AVATAR_URL = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NkZDZlMyI+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTguNjg1IDE5LjA5N0E5LjcyMyA5LjcyMyAwIDAwMjEuNzUgMTJjMC01LjM4NS00LjM2NS05Ljc1LTkuNzUtOS43NVM S5MjUgNi42MTUgMi4yNSAxMmE5LjcyMyA5LjcyMyAwIDAwMy4wNjUgNy4wOTdBOTcxNiA5LjcxNiAwIDAwMTIgMjEuNzVhOS4xMTYgOS43MTYgMCAwMDYuNjg1LTIuNjUzem0tMTIuNTQtMS4yODVBNy40ODYgNy40ODYgMCAwMTEyIDE1YTcuNDg2IDcuNDg2IDAgMDE1Ljg1NSAyLjgxMkE4LjIyNCA4LjIyNCAwIDAxMTIgMjAuMjVhOC4yMjQgOC4yMjQgMCAwMS01Ljg1NS0yLjQzOHpNM TcuNzUgOWEzLjc1IDMuNzUgMCAxMS03LjUgMCAzLjc1IDMuNzUgMCAwMTcuNSAwem0iIGNsaXAtcnVsZT0iZXZlbm9kZCIgLz48L3N2Zz4=";
 
@@ -270,41 +273,51 @@ const StudentCard: React.FC<{ student: Student, onSelect: (student: Student) => 
     </div>
 );
 
-const PrintableReportCardModal: React.FC<{
-    report: any;
+export const PrintableReportCardModal: React.FC<{
     student: Student;
     onClose: () => void;
     academicYear: string;
     currentTerm: string;
-}> = ({ report, student, onClose, academicYear, currentTerm }) => {
+}> = ({ student, onClose, academicYear, currentTerm }) => {
     const reportCardRef = useRef<HTMLDivElement>(null);
+    const report = student.grades.find(g => g.term === currentTerm);
 
     const handlePrint = () => {
-        document.body.classList.add('printing-modal');
-        const printableContent = reportCardRef.current?.innerHTML;
-        const originalContent = document.body.innerHTML;
-        document.body.innerHTML = printableContent || '';
+        if (!reportCardRef.current) return;
+        const printContents = `<div class="printable-content-wrapper">${reportCardRef.current.innerHTML}</div><div class="printable-footer">${SCHOOL_MOTTO}</div>`;
+        const originalContents = document.body.innerHTML;
+        document.body.innerHTML = printContents;
         window.print();
-        document.body.innerHTML = originalContent;
-        // This is a bit of a hack to re-attach the React app
+        document.body.innerHTML = originalContents;
         window.location.reload();
     };
 
     const handleExport = () => {
         if(reportCardRef.current) {
-            exportToPdf(reportCardRef.current, `Report_Card_${student.id}_${report.term.replace(/\s/g, '_')}`);
+            exportToPdf(reportCardRef.current, `Report_Card_${student.id}_${currentTerm.replace(/\s/g, '_')}`);
         }
     };
 
+    if (!report) {
+        return (
+             <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4">
+                <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md animate-fade-in-up text-center">
+                    <h2 className="text-xl font-bold text-slate-800 mb-4">No Report Data</h2>
+                    <p className="text-slate-600 mb-6">No academic records found for {student.name} for the {currentTerm}.</p>
+                    <button onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300">Close</button>
+                </div>
+            </div>
+        )
+    }
+
     return (
          <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4 printing-modal">
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl animate-fade-in-up">
-                <div ref={reportCardRef} className="p-8">
-                     {/* Report Card Content */}
+            <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl animate-fade-in-up max-h-[90vh] flex flex-col">
+                <div ref={reportCardRef} className="p-6 overflow-y-auto text-black">
                     <div className="text-center border-b-2 border-slate-800 pb-4 mb-6">
                         <img src={SCHOOL_LOGO_URL} alt="School Logo" className="w-20 h-20 mx-auto mb-2" />
-                        <h1 className="text-3xl font-bold text-slate-800">{SCHOOL_NAME}</h1>
-                        <p className="text-lg font-semibold text-slate-600">Terminal Report Card</p>
+                        <h1 className="text-3xl font-bold text-black">{SCHOOL_NAME}</h1>
+                        <p className="text-lg font-semibold text-black">Terminal Report Card</p>
                     </div>
                     <div className="grid grid-cols-3 gap-4 mb-6 text-sm">
                         <div><strong>Student:</strong> {student.name}</div>
@@ -312,34 +325,63 @@ const PrintableReportCardModal: React.FC<{
                         <div><strong>Class:</strong> {student.currentClass}</div>
                         <div><strong>Academic Year:</strong> {academicYear}</div>
                         <div><strong>Term:</strong> {currentTerm}</div>
+                        {currentTerm === 'Third Term' && <div><strong>Status:</strong> <span className="font-bold">{report.promotionStatus || 'N/A'}</span></div>}
                         <div><strong>Position:</strong> {report.position}</div>
                         <div><strong>Average:</strong> {report.average}%</div>
                     </div>
-                    <table className="w-full text-sm text-left border-collapse">
+                    <table className="w-full text-sm text-left border-collapse mb-6">
                         <thead className="bg-slate-100">
                             <tr>
                                 <th className="p-2 border">Subject</th>
                                 <th className="p-2 border text-center">CA (30%)</th>
                                 <th className="p-2 border text-center">Exam (70%)</th>
                                 <th className="p-2 border text-center">Total (100%)</th>
+                                <th className="p-2 border text-center">Grade</th>
                                 <th className="p-2 border text-center">Remarks</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {Object.entries(report.subjects).map(([subject, scores]: [string, any]) =>(
+                        <tbody className="text-black">
+                            {Object.entries(report.subjects).map(([subject, scores]) => {
+                                // Fix: Cast scores to GradeScore to access properties without TypeScript errors.
+                                const gradeScores = scores as GradeScore;
+                                const ca_total = (gradeScores.classAssignments || 0) + (gradeScores.project || 0);
+                                const exam_total = (gradeScores.midterm || 0) + (gradeScores.endOfTerm || 0);
+                                const final_total = ca_total + exam_total;
+                                const gradeInfo = getGradeInfo(final_total);
+                                return (
                                 <tr key={subject} className="border-b">
                                     <td className="p-2 border font-medium">{subject}</td>
-                                    <td className="p-2 border text-center">{scores.ca}</td>
-                                    <td className="p-2 border text-center">{scores.exam}</td>
-                                    <td className="p-2 border text-center font-semibold">{scores.total}</td>
-                                    <td className="p-2 border text-center">{scores.total >= 80 ? 'Excellent' : scores.total >= 70 ? 'Very Good' : scores.total >= 60 ? 'Good' : scores.total >= 50 ? 'Credit' : 'Needs Improvement'}</td>
+                                    <td className="p-2 border text-center">{ca_total}</td>
+                                    <td className="p-2 border text-center">{exam_total}</td>
+                                    <td className="p-2 border text-center font-semibold">{final_total}</td>
+                                    <td className="p-2 border text-center">{gradeInfo.grade}</td>
+                                    <td className="p-2 border text-center">{gradeInfo.remarks}</td>
                                 </tr>
-                            ))}
+                            )})}
                         </tbody>
                     </table>
-                    <div className="mt-8 text-sm space-y-4">
-                        <div><strong>Teacher's Comments:</strong> ________________________________________________________________</div>
-                        <div><strong>Headteacher's Comments:</strong> _____________________________________________________________</div>
+
+                    <div className="grid grid-cols-2 gap-6 text-sm">
+                        <div>
+                            <h4 className="font-bold mb-2">Attendance Summary</h4>
+                            <p>Present: {student.attendance.filter(a => a.status === 'Present').length} days</p>
+                            <p>Absent: {student.attendance.filter(a => a.status === 'Absent').length} days</p>
+                            <p>Late: {student.attendance.filter(a => a.status === 'Late').length} days</p>
+                        </div>
+                         <div>
+                            <h4 className="font-bold mb-2">General Information</h4>
+                            <p><strong>Positions Held:</strong> {student.positionsHeld.join(', ') || 'N/A'}</p>
+                            <p><strong>Awards:</strong> {student.awards.join(', ') || 'N/A'}</p>
+                            <p><strong>Interests/Clubs:</strong> {student.interests.join(', ') || 'N/A'}</p>
+                        </div>
+                         <div className="col-span-2">
+                            <h4 className="font-bold mb-2">Teacher's Comments</h4>
+                            <p className="border p-2 rounded bg-slate-50 min-h-[40px]">{report.teacherComment || 'N/A'}</p>
+                        </div>
+                        <div className="col-span-2">
+                            <h4 className="font-bold mb-2">Headteacher's Comments</h4>
+                            <p className="border p-2 rounded bg-slate-50 min-h-[40px]">{report.headteacherComment || 'N/A'}</p>
+                        </div>
                     </div>
                      <div className="mt-12 flex justify-between text-sm">
                         <span>_________________________ <br/> Teacher's Signature</span>
@@ -365,10 +407,10 @@ const StudentDetails: React.FC<{
     onPromoteStudent: (studentId: string, newClass: string, isRepeating: boolean) => void;
     onArchiveStudent: (studentId: string) => void;
     onDeleteStudent: (studentId: string) => void;
-    onAdminPasswordChange: (userId: string, newPassword: string) => void;
+    onAdminAccountChange: (userId: string, newUsername: string, newPassword?: string) => void;
     academicYear: string;
     currentTerm: string;
-}> = ({ student, user, onBack, onUpdateStudent, onPromoteStudent, onArchiveStudent, onDeleteStudent, onAdminPasswordChange, academicYear, currentTerm }) => {
+}> = ({ student, user, onBack, onUpdateStudent, onPromoteStudent, onArchiveStudent, onDeleteStudent, onAdminAccountChange, academicYear, currentTerm }) => {
     const age = new Date().getFullYear() - new Date(student.dateOfBirth).getFullYear();
     const [activeTab, setActiveTab] = useState('profile');
     
@@ -378,11 +420,12 @@ const StudentDetails: React.FC<{
     
     const [reportToPrint, setReportToPrint] = useState<any | null>(null);
     const profileRef = useRef<HTMLDivElement>(null);
+    const photoInputRef = useRef<HTMLInputElement>(null);
 
     const [isPromoteModalOpen, setPromoteModalOpen] = useState(false);
     const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
     const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
-    const [isChangePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
+    const [isManageAccountModalOpen, setManageAccountModalOpen] = useState(false);
     
     const [docName, setDocName] = useState('');
     const docFileRef = useRef<HTMLInputElement>(null);
@@ -399,6 +442,17 @@ const StudentDetails: React.FC<{
     const handleProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
         setEditableStudent(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              setEditableStudent(prev => ({...prev, photoUrl: reader.result as string}));
+          };
+          reader.readAsDataURL(file);
+      }
     };
 
     const handleSaveProfile = () => {
@@ -501,200 +555,203 @@ const StudentDetails: React.FC<{
 
     return (
         <>
-        <div ref={profileRef} className="bg-white p-6 rounded-lg shadow-lg animate-fade-in">
-            <button onClick={onBack} className="mb-4 text-blue-600 hover:underline no-print">&larr; Back to Student List</button>
-            <div className="flex flex-col md:flex-row items-start md:space-x-8">
-                <div className="text-center mb-6 md:mb-0">
-                    <img src={student.photoUrl} alt={student.name} className="w-40 h-40 rounded-full object-cover mx-auto shadow-md" />
-                    <h2 className="text-2xl font-bold text-slate-800 mt-4">{isEditing ? <input type="text" name="name" value={editableStudent.name} onChange={handleProfileChange} className="w-full text-center p-1 border rounded-md border-slate-300"/> : student.name}</h2>
-                    <p className="text-slate-600 font-medium mt-1">Student ID: <span className="font-mono bg-slate-100 px-2 py-0.5 rounded">{student.id}</span></p>
-                    <p className="text-sm bg-blue-100 text-blue-800 font-medium px-3 py-1 rounded-full inline-block mt-2">{student.currentClass}</p>
-                     {student.status === 'archived' && <p className="text-sm bg-yellow-100 text-yellow-800 font-medium px-3 py-1 rounded-full inline-block mt-2">Archived</p>}
-                </div>
-                <div className="flex-1 w-full">
-                    <div className="border-b border-slate-200 mb-4 no-print">
-                        <nav className="flex space-x-2 sm:space-x-4 flex-wrap">
-                            <button onClick={() => setActiveTab('profile')} className={`py-2 px-1 font-medium ${activeTab === 'profile' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Profile</button>
-                            <button onClick={() => setActiveTab('academics')} className={`py-2 px-1 font-medium ${activeTab === 'academics' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Academics</button>
-                            <button onClick={() => setActiveTab('financials')} className={`py-2 px-1 font-medium ${activeTab === 'financials' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Financials</button>
-                             <button onClick={() => setActiveTab('documents')} className={`py-2 px-1 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Documents</button>
-                            {canEdit && <button onClick={() => setActiveTab('notes')} className={`py-2 px-1 font-medium ${activeTab === 'notes' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Private Notes</button>}
-                        </nav>
+        <div className="bg-white p-6 rounded-lg shadow-lg animate-fade-in">
+             <div ref={profileRef} className="printable-content-wrapper">
+                <button onClick={onBack} className="mb-4 text-blue-600 hover:underline no-print">&larr; Back to Student List</button>
+                <div className="flex flex-col md:flex-row items-start md:space-x-8">
+                    <div className="text-center mb-6 md:mb-0 relative">
+                        <img src={isEditing ? editableStudent.photoUrl : student.photoUrl} alt={student.name} className="w-40 h-40 rounded-full object-cover mx-auto shadow-md" />
+                        {isEditing && (
+                            <div className="no-print">
+                                <input type="file" accept="image/*" ref={photoInputRef} onChange={handlePhotoChange} className="hidden"/>
+                                <button onClick={() => photoInputRef.current?.click()} className="mt-2 text-sm bg-slate-200 text-slate-700 px-3 py-1 rounded-md hover:bg-slate-300 transition-colors">Change Photo</button>
+                            </div>
+                        )}
+                        <h2 className="text-2xl font-bold text-slate-800 mt-4">{isEditing ? <input type="text" name="name" value={editableStudent.name} onChange={handleProfileChange} className="w-full text-center p-1 border rounded-md border-slate-300 bg-white"/> : student.name}</h2>
+                        <div className="text-slate-600 font-medium mt-1">
+                            {isEditing ? 
+                                <input type="text" name="id" value={editableStudent.id} onChange={handleProfileChange} className="w-full text-center font-mono p-1 border rounded-md border-slate-300 bg-white"/> 
+                                : <span>Student ID: <span className="font-mono bg-slate-100 px-2 py-0.5 rounded">{student.id}</span></span>
+                            }
+                        </div>
+                        <p className="text-sm bg-blue-100 text-blue-800 font-medium px-3 py-1 rounded-full inline-block mt-2">{student.currentClass}</p>
+                         {student.status === 'archived' && <p className="text-sm bg-yellow-100 text-yellow-800 font-medium px-3 py-1 rounded-full inline-block mt-2 no-print">Archived</p>}
                     </div>
-                    {activeTab === 'profile' && (
-                         <div className="animate-fade-in">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="font-bold text-lg text-slate-800">Student Information</h3>
-                                <div className="space-x-2 no-print">
-                                    {isEditing ? (
-                                        <>
-                                            <button onClick={handleSaveProfile} className="bg-green-500 text-white px-3 py-1 rounded-md text-sm hover:bg-green-600 transition-colors">Save</button>
-                                            <button onClick={handleCancelEdit} className="bg-slate-500 text-white px-3 py-1 rounded-md text-sm hover:bg-slate-600 transition-colors">Cancel</button>
-                                        </>
-                                    ) : (
-                                        <>
-                                            {canEdit && <button onClick={() => setIsEditing(true)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300 transition-colors">Edit Profile</button>}
-                                            <button onClick={() => exportToPdf(profileRef.current!, `Student_Profile_${student.id}`)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300 transition-colors">Export PDF</button>
-                                            <button onClick={() => window.print()} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300 transition-colors">Print Profile</button>
-                                        </>
+                    <div className="flex-1 w-full">
+                        <div className="border-b border-slate-200 mb-4 no-print">
+                            <nav className="flex space-x-2 sm:space-x-4 flex-wrap no-print">
+                                <button onClick={() => setActiveTab('profile')} className={`py-2 px-1 font-medium ${activeTab === 'profile' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Profile</button>
+                                <button onClick={() => setActiveTab('academics')} className={`py-2 px-1 font-medium ${activeTab === 'academics' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Academics</button>
+                                <button onClick={() => setActiveTab('financials')} className={`py-2 px-1 font-medium ${activeTab === 'financials' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Financials</button>
+                                 <button onClick={() => setActiveTab('documents')} className={`py-2 px-1 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Documents</button>
+                                {canEdit && <button onClick={() => setActiveTab('notes')} className={`py-2 px-1 font-medium ${activeTab === 'notes' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Private Notes</button>}
+                            </nav>
+                        </div>
+                        <div className={activeTab === 'profile' ? 'animate-fade-in' : 'hidden'}>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-bold text-lg text-slate-800">Student Information</h3>
+                                    <div className="space-x-2 no-print">
+                                        {isEditing ? (
+                                            <>
+                                                <button onClick={handleSaveProfile} className="bg-green-500 text-white px-3 py-1 rounded-md text-sm hover:bg-green-600 transition-colors">Save</button>
+                                                <button onClick={handleCancelEdit} className="bg-slate-500 text-white px-3 py-1 rounded-md text-sm hover:bg-slate-600 transition-colors">Cancel</button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                {canEdit && <button onClick={() => setIsEditing(true)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300 transition-colors">Edit Profile</button>}
+                                                <button onClick={() => exportToPdf(profileRef.current!, `Student_Profile_${student.id}`)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300 transition-colors">Export PDF</button>
+                                                <button onClick={() => window.print()} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300 transition-colors">Print Profile</button>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6 text-slate-700">
+                                    {renderField('Date of Birth', editableStudent.dateOfBirth, 'dateOfBirth', 'date')}
+                                    {renderField('Gender', editableStudent.gender, 'gender', 'select', ['Male', 'Female'])}
+                                    {renderField('Enrolment Date', editableStudent.enrolmentDate, 'enrolmentDate', 'date')}
+                                    {renderField('Current Class', editableStudent.currentClass, 'currentClass', 'select', CLASSES)}
+                                    {renderField("Guardian's Name", editableStudent.guardianName, 'guardianName')}
+                                    {renderField("Guardian's Email", editableStudent.guardianEmail, 'guardianEmail', 'email')}
+                                    {renderField("Guardian's Contact", editableStudent.guardianContact, 'guardianContact', 'tel')}
+                                    <div className="sm:col-span-2">{renderField('Positions Held', editableStudent.positionsHeld, 'positionsHeld', 'textarea')}</div>
+                                    <div className="sm:col-span-2">{renderField('Interests', editableStudent.interests, 'interests', 'textarea')}</div>
+                                    <div className="sm:col-span-2">{renderField('Awards & Recognition', editableStudent.awards, 'awards', 'textarea')}</div>
+
+                                    {!isEditing && (
+                                        <div className="sm:col-span-2 no-print">
+                                            <strong>Actions:</strong>
+                                            <div className="mt-2 space-x-2">
+                                                <a href={`sms:${student.guardianContact}`} className="text-xs bg-slate-200 text-slate-700 px-3 py-1 rounded-md hover:bg-slate-300 transition-colors">Send SMS to Guardian</a>
+                                                <a href={`mailto:${student.guardianEmail}?subject=Message from ${SCHOOL_NAME}`} className="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-md hover:bg-blue-200 transition-colors">Send Email to Guardian</a>
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6 text-slate-700">
-                                {renderField('Date of Birth', editableStudent.dateOfBirth, 'dateOfBirth', 'date')}
-                                {renderField('Gender', editableStudent.gender, 'gender', 'select', ['Male', 'Female'])}
-                                {renderField('Enrolment Date', editableStudent.enrolmentDate, 'enrolmentDate', 'date')}
-                                {renderField('Current Class', editableStudent.currentClass, 'currentClass', 'select', CLASSES)}
-                                {renderField("Guardian's Name", editableStudent.guardianName, 'guardianName')}
-                                {renderField("Guardian's Email", editableStudent.guardianEmail, 'guardianEmail', 'email')}
-                                {renderField("Guardian's Contact", editableStudent.guardianContact, 'guardianContact', 'tel')}
-                                <div className="sm:col-span-2">{renderField('Positions Held', editableStudent.positionsHeld, 'positionsHeld', 'textarea')}</div>
-                                <div className="sm:col-span-2">{renderField('Interests', editableStudent.interests, 'interests', 'textarea')}</div>
-                                <div className="sm:col-span-2">{renderField('Awards & Recognition', editableStudent.awards, 'awards', 'textarea')}</div>
-
-                                {!isEditing && (
-                                    <div className="sm:col-span-2">
-                                        <strong>Actions:</strong>
-                                        <div className="mt-2 space-x-2 no-print">
-                                            <a href={`sms:${student.guardianContact}`} className="text-xs bg-slate-200 text-slate-700 px-3 py-1 rounded-md hover:bg-slate-300 transition-colors">Send SMS to Guardian</a>
-                                            <a href={`mailto:${student.guardianEmail}?subject=Message from ${SCHOOL_NAME}`} className="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-md hover:bg-blue-200 transition-colors">Send Email to Guardian</a>
+                                 {canPerformAdminActions && student.status === 'active' && (
+                                    <div className="border-t mt-6 pt-4 no-print">
+                                        <h3 className="font-bold text-lg text-slate-800 mb-2">Administrative Actions</h3>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button onClick={() => setPromoteModalOpen(true)} className="text-sm bg-indigo-500 text-white px-3 py-1.5 rounded-md hover:bg-indigo-600 transition-colors">Promote/Repeat Student</button>
+                                            <button onClick={() => setManageAccountModalOpen(true)} className="text-sm bg-slate-600 text-white px-3 py-1.5 rounded-md hover:bg-slate-700 transition-colors">Manage Parent Account</button>
+                                            <button onClick={() => setArchiveModalOpen(true)} className="text-sm bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600 transition-colors">Archive Student</button>
+                                            <button onClick={() => setDeleteModalOpen(true)} className="text-sm bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700 transition-colors">Delete Student</button>
                                         </div>
                                     </div>
                                 )}
-                            </div>
-                             {canPerformAdminActions && student.status === 'active' && (
-                                <div className="border-t mt-6 pt-4 no-print">
-                                    <h3 className="font-bold text-lg text-slate-800 mb-2">Administrative Actions</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        <button onClick={() => setPromoteModalOpen(true)} className="text-sm bg-indigo-500 text-white px-3 py-1.5 rounded-md hover:bg-indigo-600 transition-colors">Promote/Repeat Student</button>
-                                        <button onClick={() => setChangePasswordModalOpen(true)} className="text-sm bg-slate-600 text-white px-3 py-1.5 rounded-md hover:bg-slate-700 transition-colors">Change Parent Password</button>
-                                        <button onClick={() => setArchiveModalOpen(true)} className="text-sm bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600 transition-colors">Archive Student</button>
-                                        <button onClick={() => setDeleteModalOpen(true)} className="text-sm bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700 transition-colors">Delete Student</button>
-                                    </div>
-                                </div>
-                            )}
                         </div>
-                    )}
 
-                    {activeTab === 'academics' && (
-                        <div className="animate-fade-in">
-                            <h3 className="font-bold text-lg text-slate-800 mb-4">Academic Records</h3>
-                             {student.grades.map(grade => (
-                                <div key={grade.term} className="mb-6">
-                                    <div className="flex justify-between items-baseline bg-slate-100 p-3 rounded-t-lg">
-                                        <h4 className="font-bold text-slate-800">{grade.term}</h4>
-                                        <div className="text-sm">
-                                            <span className="font-semibold">Overall Average:</span> {grade.average}% | <span className="font-semibold">Position:</span> {grade.position}
+                        <div className={activeTab === 'academics' ? 'animate-fade-in no-print' : 'hidden no-print'}>
+                                <h3 className="font-bold text-lg text-slate-800 mb-4">Academic Records</h3>
+                                 {student.grades.map(grade => (
+                                    <div key={grade.term} className="mb-6">
+                                        <div className="flex justify-between items-baseline bg-slate-100 p-3 rounded-t-lg">
+                                            <h4 className="font-bold text-slate-800">{grade.term}</h4>
+                                            <div>
+                                            <span className="text-sm text-black"><span className="font-semibold">Overall Average:</span> {grade.average}% | <span className="font-semibold">Position:</span> {grade.position}</span>
+                                            <button onClick={() => setReportToPrint(grade)} className="ml-4 text-sm bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600 no-print">View Report Card</button>
+                                            </div>
+                                        </div>
+                                        <div className="overflow-x-auto border-x border-b rounded-b-lg">
+                                            <table className="w-full text-sm">
+                                                <thead className="text-left bg-slate-50 text-black">
+                                                    <tr>
+                                                        <th className="p-2 font-semibold">Subject</th>
+                                                        <th className="p-2 font-semibold text-center">CA Total (30)</th>
+                                                        <th className="p-2 font-semibold text-center">Exam Total (70)</th>
+                                                        <th className="p-2 font-semibold text-center bg-slate-200">Final (100)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="text-black">
+                                                    {Object.entries(grade.subjects).map(([subject, scores]) => {
+                                                        // Fix: Cast scores to GradeScore to access properties without TypeScript errors.
+                                                        const gradeScores = scores as GradeScore;
+                                                        const ca_total = (gradeScores.classAssignments || 0) + (gradeScores.project || 0);
+                                                        const exam_total = (gradeScores.midterm || 0) + (gradeScores.endOfTerm || 0);
+                                                        const final_total = ca_total + exam_total;
+                                                        return (
+                                                            <tr key={subject} className="border-t">
+                                                                <td className="p-2 font-medium">{subject}</td>
+                                                                <td className="p-2 text-center font-semibold">{ca_total}</td>
+                                                                <td className="p-2 text-center font-semibold">{exam_total}</td>
+                                                                <td className="p-2 text-center font-bold bg-slate-100">{final_total}</td>
+                                                            </tr>
+                                                        )
+                                                    })}
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </div>
-                                    <div className="overflow-x-auto border-x border-b rounded-b-lg">
-                                        <table className="w-full text-sm">
-                                            <thead className="text-left bg-slate-50">
-                                                <tr>
-                                                    <th className="p-2 font-semibold">Subject</th>
-                                                    <th className="p-2 font-semibold text-center">Class Assignments & Tests (20)</th>
-                                                    <th className="p-2 font-semibold text-center">Project/Practical Work (10)</th>
-                                                    <th className="p-2 font-semibold text-center text-blue-700">CA Total (30)</th>
-                                                    <th className="p-2 font-semibold text-center">Mid-Term</th>
-                                                    <th className="p-2 font-semibold text-center">End of Term</th>
-                                                    <th className="p-2 font-semibold text-center text-blue-700">Exam Total (70)</th>
-                                                    <th className="p-2 font-semibold text-center bg-slate-200">Final (100)</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {Object.entries(grade.subjects).map(([subject, scores]) => {
-                                                    const ca_total = (scores.classAssignments || 0) + (scores.project || 0);
-                                                    const exam_total = (scores.midterm || 0) + (scores.endOfTerm || 0);
-                                                    const final_total = ca_total + exam_total;
-                                                    return (
-                                                        <tr key={subject} className="border-t">
-                                                            <td className="p-2 font-medium">{subject}</td>
-                                                            <td className="p-2 text-center">{scores.classAssignments || '-'}</td>
-                                                            <td className="p-2 text-center">{scores.project || '-'}</td>
-                                                            <td className="p-2 text-center font-semibold text-blue-600">{ca_total}</td>
-                                                            <td className="p-2 text-center">{scores.midterm || '-'}</td>
-                                                            <td className="p-2 text-center">{scores.endOfTerm || '-'}</td>
-                                                            <td className="p-2 text-center font-semibold text-blue-600">{exam_total}</td>
-                                                            <td className="p-2 text-center font-bold bg-slate-100">{final_total}</td>
-                                                        </tr>
-                                                    )
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                             ))}
-                             {student.grades.length === 0 && <p className="p-4 bg-white rounded-lg border text-slate-500">No academic records found for this student.</p>}
+                                 ))}
+                                 {student.grades.length === 0 && <p className="p-4 bg-white rounded-lg border text-slate-500">No academic records found for this student.</p>}
                         </div>
-                    )}
-                    
-                    {activeTab === 'financials' && (
-                        <div className="animate-fade-in">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {/* Left Side: Summary and Actions */}
-                                <div className="bg-slate-50 p-4 rounded-lg border">
-                                    <h3 className="font-bold text-lg text-slate-800 mb-4">Financial Overview</h3>
-                                    <div className="space-y-2 text-sm">
-                                        <div className="flex justify-between"><span>Total Bill:</span> <span className="font-semibold">GHS {financialsSummary.totalFees.toFixed(2)}</span></div>
-                                        <div className="flex justify-between"><span>Discounts:</span> <span className="font-semibold text-green-600">- GHS {financialsSummary.totalDiscounts.toFixed(2)}</span></div>
-                                        <div className="flex justify-between font-bold border-t pt-2"><span>Net Bill:</span> <span>GHS {(financialsSummary.totalFees - financialsSummary.totalDiscounts).toFixed(2)}</span></div>
-                                        <div className="flex justify-between"><span>Paid:</span> <span className="font-semibold">GHS {financialsSummary.paid.toFixed(2)}</span></div>
-                                        <div className={`flex justify-between font-bold text-lg border-t pt-2 mt-2 ${financialsSummary.balance > 0 ? 'text-red-600' : 'text-green-600'}`}><span>Balance:</span> <span>GHS {financialsSummary.balance.toFixed(2)}</span></div>
-                                    </div>
-                                    {canEdit && <div className="mt-6 space-y-2">
-                                        <ManageFeeItemModal onSave={handleAddFeeItem} />
-                                        <ManageDiscountModal onSave={handleApplyDiscount} />
-                                    </div>}
-                                </div>
-
-                                {/* Right Side: Details */}
-                                <div className="space-y-6">
-                                    <div>
-                                        <h4 className="font-semibold text-slate-700 mb-2">Fee Items</h4>
-                                        <ul className="text-sm space-y-1">{student.financials.feeItems.map((item, i) => <li key={i} className="flex justify-between bg-white p-2 border rounded"><span>{item.category}</span><span>{item.amount.toFixed(2)}</span></li>)}</ul>
-                                    </div>
-                                    <div>
-                                        <h4 className="font-semibold text-slate-700 mb-2">Discounts Applied</h4>
-                                        <ul className="text-sm space-y-1">{student.financials.discounts.map((d, i) => <li key={i} className="flex justify-between bg-white p-2 border rounded"><span>{d.type} {d.description ? `(${d.description})` : ''}</span><span className="text-green-600">- {d.amount.toFixed(2)}</span></li>)}</ul>
-                                    </div>
-                                    <div>
-                                        <h4 className="font-semibold text-slate-700 mb-2">Payment History</h4>
-                                        <ul className="text-sm space-y-1">{student.financials.payments.map((p, i) => <li key={i} className="flex justify-between bg-white p-2 border rounded"><span>{p.date} ({p.receipt})</span><span>{p.amount.toFixed(2)}</span></li>)}</ul>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                    
-                    {activeTab === 'documents' && (
-                         <div className="animate-fade-in">
-                             <h3 className="font-bold text-lg text-slate-800 mb-4">Student Documents</h3>
-                             {canEdit && (
-                                <form onSubmit={handleAddDocument} className="mb-6 p-4 bg-slate-50 border rounded-lg flex items-end space-x-4">
-                                    <div className="flex-grow">
-                                        <label className="block text-sm font-medium text-slate-700">Document Name</label>
-                                        <input type="text" value={docName} onChange={e => setDocName(e.target.value)} className="mt-1 w-full p-2 border border-slate-300 rounded-lg"/>
-                                    </div>
-                                     <div className="flex-grow">
-                                        <label className="block text-sm font-medium text-slate-700">File</label>
-                                        <input type="file" ref={docFileRef} className="mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
-                                    </div>
-                                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Upload</button>
-                                </form>
-                             )}
-                             <div className="space-y-2">
-                                {student.documents && student.documents.length > 0 ? (
-                                    student.documents.map((doc, i) => (
-                                        <div key={i} className="flex justify-between items-center p-2 bg-white border rounded">
-                                            <span>{doc.name}</span>
-                                            <span className="text-sm text-slate-500">{doc.date}</span>
+                        
+                        <div className={activeTab === 'financials' ? 'animate-fade-in no-print' : 'hidden no-print'}>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* Left Side: Summary and Actions */}
+                                    <div className="bg-slate-50 p-4 rounded-lg border text-black">
+                                        <h3 className="font-bold text-lg text-black mb-4">Financial Overview</h3>
+                                        <div className="space-y-2 text-sm">
+                                            <div className="flex justify-between"><span className="text-black">Total Bill:</span> <span className="font-semibold text-black">GHS {financialsSummary.totalFees.toFixed(2)}</span></div>
+                                            <div className="flex justify-between"><span className="text-black">Discounts:</span> <span className="font-semibold text-black">- GHS {financialsSummary.totalDiscounts.toFixed(2)}</span></div>
+                                            <div className="flex justify-between font-bold border-t pt-2"><span className="text-black">Net Bill:</span> <span className="text-black">GHS {(financialsSummary.totalFees - financialsSummary.totalDiscounts).toFixed(2)}</span></div>
+                                            <div className="flex justify-between"><span className="text-black">Paid:</span> <span className="font-semibold text-black">GHS {financialsSummary.paid.toFixed(2)}</span></div>
+                                            <div className={`flex justify-between font-bold text-lg border-t pt-2 mt-2`}><span className="text-black">Balance:</span> <span className="text-black">GHS {financialsSummary.balance.toFixed(2)}</span></div>
                                         </div>
-                                    ))
-                                ) : <p className="text-slate-500">No documents uploaded.</p>}
-                             </div>
-                         </div>
-                    )}
+                                        {canEdit && <div className="mt-6 space-y-2">
+                                            <ManageFeeItemModal onSave={handleAddFeeItem} />
+                                            <ManageDiscountModal onSave={handleApplyDiscount} />
+                                        </div>}
+                                    </div>
 
+                                    {/* Right Side: Details */}
+                                    <div className="space-y-6">
+                                        <div>
+                                            <h4 className="font-semibold text-black mb-2">Fee Items</h4>
+                                            <ul className="text-sm space-y-1">{student.financials.feeItems.map((item, i) => <li key={i} className="flex justify-between bg-white p-2 border rounded text-black"><span>{item.category}</span><span>{item.amount.toFixed(2)}</span></li>)}</ul>
+                                        </div>
+                                        <div>
+                                            <h4 className="font-semibold text-black mb-2">Discounts Applied</h4>
+                                            <ul className="text-sm space-y-1">{student.financials.discounts.map((d, i) => <li key={i} className="flex justify-between bg-white p-2 border rounded text-black"><span>{d.type} {d.description ? `(${d.description})` : ''}</span><span className="text-black">- {d.amount.toFixed(2)}</span></li>)}</ul>
+                                        </div>
+                                        <div>
+                                            <h4 className="font-semibold text-black mb-2">Payment History</h4>
+                                            <ul className="text-sm space-y-1">{student.financials.payments.map((p, i) => <li key={i} className="flex justify-between bg-white p-2 border rounded text-black"><span>{p.date} ({p.receipt})</span><span>{p.amount.toFixed(2)}</span></li>)}</ul>
+                                        </div>
+                                    </div>
+                                </div>
+                        </div>
+                        
+                        <div className={activeTab === 'documents' ? 'animate-fade-in no-print' : 'hidden no-print'}>
+                                 <h3 className="font-bold text-lg text-slate-800 mb-4">Student Documents</h3>
+                                 {canEdit && (
+                                    <form onSubmit={handleAddDocument} className="mb-6 p-4 bg-slate-50 border rounded-lg flex items-end space-x-4">
+                                        <div className="flex-grow">
+                                            <label className="block text-sm font-medium text-slate-700">Document Name</label>
+                                            <input type="text" value={docName} onChange={e => setDocName(e.target.value)} className="mt-1 w-full p-2 border border-slate-300 rounded-lg"/>
+                                        </div>
+                                         <div className="flex-grow">
+                                            <label className="block text-sm font-medium text-slate-700">File</label>
+                                            <input type="file" ref={docFileRef} className="mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                                        </div>
+                                        <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Upload</button>
+                                    </form>
+                                 )}
+                                 <div className="space-y-2">
+                                    {student.documents && student.documents.length > 0 ? (
+                                        student.documents.map((doc, i) => (
+                                            <div key={i} className="flex justify-between items-center p-2 bg-white border rounded">
+                                                <span>{doc.name}</span>
+                                                <span className="text-sm text-slate-500">{doc.date}</span>
+                                            </div>
+                                        ))
+                                    ) : <p className="text-slate-500">No documents uploaded.</p>}
+                                 </div>
+                        </div>
+                         <div className={activeTab === 'notes' ? 'animate-fade-in no-print' : 'hidden no-print'}>
+                            {/* Notes tab content */}
+                        </div>
+
+                    </div>
                 </div>
             </div>
         </div>
@@ -720,14 +777,15 @@ const StudentDetails: React.FC<{
                 onClose={() => setDeleteModalOpen(false)}
             />
         )}
-        {reportToPrint && <PrintableReportCardModal report={reportToPrint} student={student} onClose={() => setReportToPrint(null)} academicYear={academicYear} currentTerm={currentTerm} />}
-        {isChangePasswordModalOpen && (
-            <AdminChangePasswordModal
-                userToUpdate={{ id: student.id, name: student.guardianName, role: Role.Parent }}
-                onClose={() => setChangePasswordModalOpen(false)}
-                onSave={(userId, newPassword) => {
-                    onAdminPasswordChange(userId, newPassword);
-                    setChangePasswordModalOpen(false);
+        {reportToPrint && <PrintableReportCardModal student={student} onClose={() => setReportToPrint(null)} academicYear={academicYear} currentTerm={currentTerm} />}
+        {isManageAccountModalOpen && (
+            <AdminManageAccountModal
+                userToUpdate={{ id: student.id, name: student.guardianName, username: student.id }}
+                isParent={true}
+                onClose={() => setManageAccountModalOpen(false)}
+                onSave={(userId, newUsername, newPassword) => {
+                    onAdminAccountChange(userId, newUsername, newPassword);
+                    setManageAccountModalOpen(false);
                 }}
             />
         )}
@@ -816,10 +874,10 @@ export const Students: React.FC<{
     students: Student[], 
     onUpdateStudent: (student: Student) => void, 
     onAddStudent: (student: Student) => void, 
-    onAdminPasswordChange: (userId: string, newPassword: string) => void,
+    onAdminAccountChange: (userId: string, newUsername: string, newPassword?: string) => void,
     academicYear: string, 
     currentTerm: string 
-}> = ({ user, students: allStudents, onUpdateStudent, onAddStudent, onAdminPasswordChange, academicYear, currentTerm }) => {
+}> = ({ user, students: allStudents, onUpdateStudent, onAddStudent, onAdminAccountChange, academicYear, currentTerm }) => {
     const [students, setStudents] = useState<Student[]>(allStudents);
     const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
     const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
@@ -890,7 +948,7 @@ export const Students: React.FC<{
                     onPromoteStudent={handlePromoteStudent}
                     onArchiveStudent={handleArchiveStudent}
                     onDeleteStudent={handleDeleteStudent}
-                    onAdminPasswordChange={onAdminPasswordChange}
+                    onAdminAccountChange={onAdminAccountChange}
                     academicYear={academicYear}
                     currentTerm={currentTerm}
                 />

@@ -1,6 +1,7 @@
+
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-// Fix: Import `Notification` type to resolve type errors.
-import { Page, User, Role, Student, Staff, LoggedInUser, Settings, PasswordChangeRequest, StaffCategory, Notification } from './types';
+// Fix: Import `Notification` and `GradeScore` types to resolve type errors.
+import { Page, User, Role, Student, Staff, LoggedInUser, Settings, PasswordChangeRequest, StaffCategory, Notification, GradeScore } from './types';
 import { SCHOOL_LOGO_URL, SCHOOL_NAME, SCHOOL_MOTTO, NAV_ITEMS, ICONS } from './constants';
 // Fix: Import `mockNotifications` to resolve "Cannot find name" error.
 import { mockUsers, mockStudents, mockStaff, mockSettings, mockNotifications, mockPasswordRequests } from './data/mockData';
@@ -10,8 +11,8 @@ import { Students as StudentsPage } from './components/Students';
 import { StaffPage } from './components/Teachers';
 import { ClassManagement } from './components/ClassManagement';
 import { Financials } from './components/Financials';
-import { Notifications as NotificationsComponent, ComingSoon } from './components/Utility';
-import { ChangePasswordModal, SchoolSettings } from './components/Settings';
+import { Notifications as NotificationsComponent, ComingSoon, BackupRestore } from './components/Utility';
+import { ChangePasswordModal, SchoolSettings, AdminManageAccountModal } from './components/Settings';
 import { calculateFinancials } from './utils/auth';
 
 
@@ -113,7 +114,9 @@ const ParentPortal: React.FC<{ student: Student, page: string, notifications: No
                                     <thead className="bg-slate-50"><tr><th className="p-2">Subject</th><th className="p-2">Total (100%)</th></tr></thead>
                                     <tbody>
                                         {Object.entries(grade.subjects).map(([subject, scores]) => {
-                                             const total = (scores.classAssignments || 0) + (scores.project || 0) + (scores.midterm || 0) + (scores.endOfTerm || 0);
+                                             // Fix: Cast scores to GradeScore to access properties without TypeScript errors.
+                                             const gradeScores = scores as GradeScore;
+                                             const total = (gradeScores.classAssignments || 0) + (gradeScores.project || 0) + (gradeScores.midterm || 0) + (gradeScores.endOfTerm || 0);
                                              return <tr key={subject} className="border-b"><td className="p-2 font-medium">{subject}</td><td className="p-2">{total}</td></tr>
                                         })}
                                     </tbody>
@@ -156,6 +159,34 @@ const App: React.FC = () => {
     const [currentPage, setCurrentPage] = useState<string>(Page.Dashboard);
     const [isSidebarOpen, setSidebarOpen] = useState(false);
     const [isChangePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
+    
+    // Load state from localStorage on initial render
+    useEffect(() => {
+        try {
+            const savedState = localStorage.getItem('schoolManagementState');
+            if (savedState) {
+                const loadedState = JSON.parse(savedState);
+                if (loadedState.users) setUsers(loadedState.users);
+                if (loadedState.students) setStudents(loadedState.students);
+                if (loadedState.staff) setStaff(loadedState.staff);
+                if (loadedState.notifications) setNotifications(loadedState.notifications);
+                if (loadedState.settings) setSettings(loadedState.settings);
+                if (loadedState.passwordRequests) setPasswordRequests(loadedState.passwordRequests);
+            }
+        } catch (error) {
+            console.error("Could not load state from localStorage", error);
+        }
+    }, []);
+    
+    // Save state to localStorage whenever it changes
+    useEffect(() => {
+        try {
+            const stateToSave = { users, students, staff, notifications, settings, passwordRequests };
+            localStorage.setItem('schoolManagementState', JSON.stringify(stateToSave));
+        } catch (error) {
+            console.error("Could not save state to localStorage", error);
+        }
+    }, [users, students, staff, notifications, settings, passwordRequests]);
 
     const handleLogin = useCallback((loggedInUser: LoggedInUser) => {
         setUser(loggedInUser);
@@ -173,6 +204,21 @@ const App: React.FC = () => {
     const handleStaffUpdate = (updatedStaff: Staff) => {
         setStaff(prev => prev.map(s => s.id === updatedStaff.id ? updatedStaff : s));
     };
+    
+    const handleDeleteStaff = (staffId: string) => {
+        const staffToDelete = staff.find(s => s.id === staffId);
+        if (!staffToDelete) return;
+
+        if (window.confirm(`Are you sure you want to permanently delete ${staffToDelete.name}? This will also delete their user account.`)) {
+            setStaff(prev => prev.filter(s => s.id !== staffId));
+            const associatedUser = users.find(u => u.staffId === staffId);
+            if (associatedUser) {
+                setUsers(prev => prev.filter(u => u.id !== associatedUser.id));
+            }
+            alert(`Staff member ${staffToDelete.name} and their user account have been deleted.`);
+        }
+    };
+
 
     const handleAddStudent = (newStudent: Student) => {
         setStudents(prev => [newStudent, ...prev]);
@@ -240,6 +286,78 @@ const App: React.FC = () => {
        if(!isAdminUpdate) setChangePasswordModalOpen(false);
     };
 
+    const handleAdminAccountUpdate = (id: string, newUsername: string, newPassword?: string) => {
+        // Handle creating a new account for a staff member who doesn't have one
+        if (id.startsWith('new_for_')) {
+            const staffId = id.replace('new_for_', '');
+            const staffMember = staff.find(s => s.id === staffId);
+            if (staffMember && !users.find(u => u.staffId === staffId)) {
+                const newUserId = `U${(users.length + 1).toString().padStart(3, '0')}`;
+                const newUserRole = staffMember.schoolRoles?.includes('Headteacher') 
+                    ? Role.Headteacher 
+                    : staffMember.category === StaffCategory.Teaching 
+                    ? Role.Teacher 
+                    : Role.Admin;
+
+                const newUser: User & { password: string } = {
+                    id: newUserId,
+                    username: newUsername,
+                    name: staffMember.name,
+                    role: newUserRole,
+                    staffId: staffId,
+                    password: newPassword || 'Password@123',
+                };
+                setUsers(prev => [...prev, newUser]);
+                alert(`User account created for ${staffMember.name}. Username: ${newUsername}`);
+                return;
+            }
+        }
+
+        // Handle updating an existing student (parent) account
+        const studentIndex = students.findIndex(s => s.id === id);
+        if (studentIndex > -1) {
+            setStudents(prev => prev.map(s => {
+                if (s.id === id) {
+                    return {
+                        ...s,
+                        id: newUsername, // The student ID is the parent's username
+                        parentPassword: newPassword || s.parentPassword,
+                    };
+                }
+                return s;
+            }));
+            alert("Parent account updated successfully.");
+            return;
+        }
+
+        // Handle updating an existing staff user account
+        const userIndex = users.findIndex(u => u.id === id);
+        if (userIndex > -1) {
+            setUsers(prev => prev.map(u => {
+                if (u.id === id) {
+                    return {
+                        ...u,
+                        username: newUsername,
+                        password: newPassword || (u as any).password,
+                    };
+                }
+                return u;
+            }));
+            alert("Staff user account updated successfully.");
+            return;
+        }
+    };
+    
+    const handleRestore = (data: any) => {
+        setUsers(data.users || []);
+        setStudents(data.students || []);
+        setStaff(data.staff || []);
+        setNotifications(data.notifications || []);
+        setSettings(data.settings || mockSettings);
+        setPasswordRequests(data.passwordRequests || []);
+    };
+
+
     const renderPage = () => {
         if (!user || user.role === Role.Parent) return null;
 
@@ -247,9 +365,9 @@ const App: React.FC = () => {
             case Page.Dashboard:
                 return <Dashboard user={user as User} setCurrentPage={(p) => setCurrentPage(p)} academicYear={settings.academicYear} currentTerm={settings.currentTerm} />;
             case Page.Students:
-                return <StudentsPage user={user as User} students={students} onUpdateStudent={handleStudentUpdate} onAddStudent={handleAddStudent} onAdminPasswordChange={handlePasswordUpdate} academicYear={settings.academicYear} currentTerm={settings.currentTerm} />;
+                return <StudentsPage user={user as User} students={students} onUpdateStudent={handleStudentUpdate} onAddStudent={handleAddStudent} onAdminAccountChange={handleAdminAccountUpdate} academicYear={settings.academicYear} currentTerm={settings.currentTerm} />;
             case Page.Staff:
-                return <StaffPage user={user as User} staff={staff} users={users} settings={settings} onUpdateStaff={handleStaffUpdate} onAddStaffAndUser={handleAddStaffAndUser} onAdminPasswordChange={handlePasswordUpdate} />;
+                return <StaffPage user={user as User} staff={staff} users={users} settings={settings} onUpdateStaff={handleStaffUpdate} onAddStaffAndUser={handleAddStaffAndUser} onDeleteStaff={handleDeleteStaff} onAdminAccountChange={handleAdminAccountUpdate} />;
             case Page.ClassRecords:
                  return <ClassManagement initialPage={Page.ClassRecords} user={user as User} students={students} settings={settings} onUpdateStudent={handleStudentUpdate}/>;
             case Page.Examinations:
@@ -261,14 +379,14 @@ const App: React.FC = () => {
             case Page.Settings:
                 return <SchoolSettings settings={settings} onUpdateSettings={setSettings} requests={passwordRequests} onProcessRequest={handleProcessPasswordRequest} />;
             case Page.Backup:
-                return <ComingSoon page={Page.Backup} />;
+                return <BackupRestore onRestore={handleRestore} />;
             default:
                 return <Dashboard user={user as User} setCurrentPage={(p) => setCurrentPage(p)} academicYear={settings.academicYear} currentTerm={settings.currentTerm} />;
         }
     };
     
     if (!user) {
-        return <Login onLogin={handleLogin} students={students} users={users} />;
+        return <Login onLogin={handleLogin} students={students} users={users} staff={staff} />;
     }
 
     return (

@@ -119,6 +119,9 @@ export interface Student {
     subjects: { [subject: string]: GradeScore };
     average: number;
     position: number;
+    teacherComment?: string;
+    headteacherComment?: string;
+    promotionStatus?: 'Promoted' | 'To Repeat' | 'On Probation';
   }[];
   privateNotes: StudentNote[];
   documents: SchoolDocument[];

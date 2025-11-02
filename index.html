@@ -22,31 +22,66 @@
         background: #64748b;
       }
       @media print {
-        .no-print {
-          display: none !important;
-        }
-        body {
+        body, #root {
           background-color: white !important;
           -webkit-print-color-adjust: exact;
           color-adjust: exact;
         }
-        main {
+        .no-print {
+          display: none !important;
+        }
+        main, .printable-content-wrapper {
           overflow-y: visible !important;
           height: auto !important;
         }
-        body.printing-modal > *:not(.printing-modal) {
-            visibility: hidden;
+        /* Hide everything except the content that is meant to be printed */
+        body > *:not(.printable-content-wrapper) {
+          display: none;
         }
-        .printing-modal {
+        .printable-content-wrapper {
+            position: relative;
+            font-family: 'Times New Roman', Times, serif;
+        }
+        .printable-content-wrapper::before {
+            content: '';
             position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 60vw;
+            height: 60vh;
+            background-image: url('https://lh3.googleusercontent.com/a-/ALV-UjWb9M45eXazpG0OpZQ-JLExx9zHJH_YyesKnYQDiOKPPu4skqj0=s265-w265-h265');
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: contain;
+            opacity: 0.08;
+            z-index: -1;
+        }
+        .printable-footer {
+            display: block !important;
+            position: fixed;
+            bottom: 10px;
             left: 0;
-            top: 0;
             width: 100%;
-            height: 100%;
-            z-index: 9999;
-            visibility: visible;
+            text-align: center;
+            font-style: italic;
+            font-size: 10px;
+            color: #888;
+        }
+        /* Added styles for print readability */
+        .printable-content-wrapper, .printable-content-wrapper * {
+            color: black !important;
+        }
+        .bg-slate-50, .bg-slate-100, .bg-slate-200 {
+            background-color: transparent !important;
+        }
+        .border, .border-b, .border-t, .border-l, .border-r, .border-collapse {
+            border-color: #ccc !important;
         }
       }
+       .printable-footer {
+          display: none;
+        }
     </style>
 <script type="importmap">
 {

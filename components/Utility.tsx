@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Notification, User, Page, Role, LoggedInUser } from '../types';
 
 const ConfirmationModal: React.FC<{
@@ -112,6 +112,86 @@ export const Notifications: React.FC<{ user: LoggedInUser, notifications: Notifi
                     onClose={() => setNotifToDelete(null)}
                 />
             )}
+        </div>
+    );
+};
+
+export const BackupRestore: React.FC<{ onRestore: (data: any) => void }> = ({ onRestore }) => {
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleBackup = () => {
+        try {
+            const data = localStorage.getItem('schoolManagementState');
+            if (data) {
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `ccs_backup_${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                alert('Backup successful!');
+            } else {
+                alert('No data found to back up.');
+            }
+        } catch (error) {
+            console.error("Backup failed", error);
+            alert('Backup failed. Check console for details.');
+        }
+    };
+
+    const handleRestore = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const text = e.target?.result;
+                    if (typeof text === 'string') {
+                        const data = JSON.parse(text);
+                        // Simple validation
+                        if (data.users && data.students && data.staff) {
+                            if (window.confirm('Are you sure you want to restore? This will overwrite all current data.')) {
+                                onRestore(data);
+                                alert('Restore successful! The application will now reload.');
+                                window.location.reload();
+                            }
+                        } else {
+                            alert('Invalid backup file format.');
+                        }
+                    }
+                } catch (error) {
+                    console.error("Restore failed", error);
+                    alert('Failed to read or parse the backup file.');
+                }
+            };
+            reader.readAsText(file);
+        }
+    };
+
+    return (
+        <div className="p-4 sm:p-6 lg:p-8">
+            <h1 className="text-3xl font-bold text-slate-800 mb-6">Backup & Restore</h1>
+            <div className="bg-white p-6 rounded-lg shadow-lg space-y-8">
+                <div>
+                    <h2 className="text-xl font-bold text-slate-700 mb-2">Backup Data</h2>
+                    <p className="text-slate-600 mb-4">Click the button below to download a complete backup of all school data. Keep this file in a safe place.</p>
+                    <button onClick={handleBackup} className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                        Download Backup File
+                    </button>
+                </div>
+                <hr/>
+                <div>
+                    <h2 className="text-xl font-bold text-slate-700 mb-2">Restore Data</h2>
+                    <p className="text-slate-600 mb-4">To restore from a backup file, select the file below. <strong className="text-red-600">Warning: This will overwrite all existing data in the application.</strong></p>
+                    <input type="file" accept=".json" ref={fileInputRef} onChange={handleRestore} className="hidden" />
+                    <button onClick={() => fileInputRef.current?.click()} className="bg-red-600 text-white px-6 py-2 rounded-lg hover:bg-red-700 transition-colors">
+                        Upload and Restore
+                    </button>
+                </div>
+            </div>
         </div>
     );
 };

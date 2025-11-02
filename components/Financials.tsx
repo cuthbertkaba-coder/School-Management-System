@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useRef } from 'react';
 import { Student } from '../types';
 import { mockStudents } from '../data/mockData';
@@ -93,7 +94,7 @@ const StatementModal: React.FC<{ student: Student; onClose: () => void; academic
 
     const handlePrint = () => {
         if (!statementRef.current) return;
-        const printContents = statementRef.current.innerHTML;
+        const printContents = `<div class="printable-content-wrapper">${statementRef.current.innerHTML}</div><div class="printable-footer">${"Training the Head, Hands and Heart"}</div>`;
         const originalContents = document.body.innerHTML;
         document.body.innerHTML = printContents;
         window.print();
@@ -104,11 +105,11 @@ const StatementModal: React.FC<{ student: Student; onClose: () => void; academic
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4">
             <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl animate-fade-in-up">
-                <div ref={statementRef} className="p-6">
+                <div ref={statementRef} className="p-6 text-black">
                     <div className="text-center border-b pb-4 mb-4">
                         <img src={SCHOOL_LOGO_URL} alt="School Logo" className="w-16 h-16 mx-auto mb-2" />
-                        <h2 className="text-2xl font-bold text-slate-800">{SCHOOL_NAME}</h2>
-                        <p className="text-slate-600">Student Financial Statement</p>
+                        <h2 className="text-2xl font-bold text-black">{SCHOOL_NAME}</h2>
+                        <p className="text-black">Student Financial Statement</p>
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm mb-6">
                         <p><strong>Student:</strong> {student.name}</p>
@@ -121,21 +122,21 @@ const StatementModal: React.FC<{ student: Student; onClose: () => void; academic
                     
                     <div className="space-y-4">
                         <div>
-                            <h3 className="font-bold text-lg text-slate-800 mb-2">Fee Items</h3>
+                            <h3 className="font-bold text-lg text-black mb-2">Fee Items</h3>
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-slate-50"><tr><th className="p-2 border">Date</th><th className="p-2 border">Description</th><th className="p-2 border text-right">Amount (GHS)</th></tr></thead>
                                 <tbody>{student.financials.feeItems.map((item, i) => (<tr key={`fee-${i}`}><td className="p-2 border">{item.date}</td><td className="p-2 border">{item.category}</td><td className="p-2 border text-right">{item.amount.toFixed(2)}</td></tr>))}</tbody>
                             </table>
                         </div>
                         {student.financials.discounts.length > 0 && <div>
-                            <h3 className="font-bold text-lg text-slate-800 mb-2">Discounts</h3>
+                            <h3 className="font-bold text-lg text-black mb-2">Discounts</h3>
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-slate-50"><tr><th className="p-2 border">Type</th><th className="p-2 border">Description</th><th className="p-2 border text-right">Amount (GHS)</th></tr></thead>
-                                <tbody>{student.financials.discounts.map((d, i) => (<tr key={`disc-${i}`}><td className="p-2 border">{d.type}</td><td className="p-2 border">{d.description || 'N/A'}</td><td className="p-2 border text-right text-green-600">-{d.amount.toFixed(2)}</td></tr>))}</tbody>
+                                <tbody>{student.financials.discounts.map((d, i) => (<tr key={`disc-${i}`}><td className="p-2 border">{d.type}</td><td className="p-2 border">{d.description || 'N/A'}</td><td className="p-2 border text-right">-{d.amount.toFixed(2)}</td></tr>))}</tbody>
                             </table>
                         </div>}
                         <div>
-                             <h3 className="font-bold text-lg text-slate-800 mb-2">Payment History</h3>
+                             <h3 className="font-bold text-lg text-black mb-2">Payment History</h3>
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-slate-50"><tr><th className="p-2 border">Date</th><th className="p-2 border">Receipt No.</th><th className="p-2 border text-right">Amount Paid (GHS)</th></tr></thead>
                                 <tbody>{student.financials.payments.map((p, i) => (<tr key={`pay-${i}`}><td className="p-2 border">{p.date}</td><td className="p-2 border">{p.receipt}</td><td className="p-2 border text-right">{p.amount.toFixed(2)}</td></tr>))}</tbody>
@@ -143,12 +144,12 @@ const StatementModal: React.FC<{ student: Student; onClose: () => void; academic
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-x-4 bg-slate-100 p-4 rounded-lg mt-6">
+                    <div className="grid grid-cols-2 gap-x-4 bg-slate-100 p-4 rounded-lg mt-6 text-black">
                         <div className="text-right font-semibold">Total Bill:</div><div className="font-bold">GHS {summary.totalFees.toFixed(2)}</div>
-                        <div className="text-right font-semibold">Total Discounts:</div><div className="font-bold text-green-600">- GHS {summary.totalDiscounts.toFixed(2)}</div>
+                        <div className="text-right font-semibold">Total Discounts:</div><div className="font-bold">- GHS {summary.totalDiscounts.toFixed(2)}</div>
                          <div className="text-right font-semibold border-t pt-2 mt-2">Net Bill:</div><div className="font-bold border-t pt-2 mt-2">GHS {(summary.totalFees - summary.totalDiscounts).toFixed(2)}</div>
                         <div className="text-right font-semibold">Total Paid:</div><div className="font-bold">GHS {summary.paid.toFixed(2)}</div>
-                        <div className="text-right font-bold text-lg border-t pt-2 mt-2">Balance Due:</div><div className={`font-extrabold text-lg border-t pt-2 mt-2 ${summary.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>GHS {summary.balance.toFixed(2)}</div>
+                        <div className="text-right font-bold text-lg border-t pt-2 mt-2">Balance Due:</div><div className={`font-extrabold text-lg border-t pt-2 mt-2`}>GHS {summary.balance.toFixed(2)}</div>
                     </div>
                 </div>
                 <div className="flex justify-end space-x-4 p-4 bg-slate-50 border-t rounded-b-lg no-print">
@@ -232,9 +233,9 @@ export const Financials: React.FC<{ students: Student[], onUpdateStudent: (stude
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-white p-4 rounded-lg shadow text-center"><p className="text-sm text-slate-500">Total Billed</p><p className="font-bold text-2xl text-blue-600">GHS {totals.totalFees.toFixed(2)}</p></div>
-                <div className="bg-white p-4 rounded-lg shadow text-center"><p className="text-sm text-slate-500">Total Paid</p><p className="font-bold text-2xl text-green-600">GHS {totals.paid.toFixed(2)}</p></div>
-                <div className="bg-white p-4 rounded-lg shadow text-center"><p className="text-sm text-slate-500">Total Outstanding</p><p className="font-bold text-2xl text-red-600">GHS {totals.balance.toFixed(2)}</p></div>
+                <div className="bg-white p-4 rounded-lg shadow text-center"><p className="text-sm text-slate-500">Total Billed</p><p className="font-bold text-2xl text-blue-800">GHS {totals.totalFees.toFixed(2)}</p></div>
+                <div className="bg-white p-4 rounded-lg shadow text-center"><p className="text-sm text-slate-500">Total Paid</p><p className="font-bold text-2xl text-green-700">GHS {totals.paid.toFixed(2)}</p></div>
+                <div className="bg-white p-4 rounded-lg shadow text-center"><p className="text-sm text-slate-500">Total Outstanding</p><p className="font-bold text-2xl text-red-700">GHS {totals.balance.toFixed(2)}</p></div>
             </div>
 
             <div ref={financialsTableRef} className="overflow-x-auto bg-white rounded-lg shadow">

@@ -1,15 +1,16 @@
 import React, { useState } from 'react';
 import { SCHOOL_LOGO_URL, SCHOOL_NAME, SCHOOL_MOTTO } from '../constants';
-import { Role, User, Student, LoggedInUser } from '../types';
+import { Role, User, Student, LoggedInUser, Staff } from '../types';
 import { ForgotPasswordModal } from './Settings';
 
 interface LoginProps {
   onLogin: (user: LoggedInUser) => void;
   students: Student[];
   users: (User & { password?: string })[];
+  staff: Staff[];
 }
 
-export const Login: React.FC<LoginProps> = ({ onLogin, students, users }) => {
+export const Login: React.FC<LoginProps> = ({ onLogin, students, users, staff }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -36,6 +37,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin, students, users }) => {
     const userAccount = users.find(u => u.username.toLowerCase() === trimmedUsername.toLowerCase());
 
     if (userAccount) {
+      // Check if staff member is active
+      if (userAccount.staffId) {
+          const staffMember = staff.find(s => s.id === userAccount.staffId);
+          if (staffMember && staffMember.status === 'archived') {
+              setError('This account has been archived and is inactive.');
+              setIsLoading(false);
+              return;
+          }
+      }
+
       if (trimmedPassword === userAccount.password) {
         // Correct password for staff user
         const { password, ...userToLogin } = userAccount;
@@ -51,11 +62,16 @@ export const Login: React.FC<LoginProps> = ({ onLogin, students, users }) => {
 
     // If no staff user was found, now check for a parent (student) login.
     const studentAccount = students.find(s => s.id.toLowerCase() === trimmedUsername.toLowerCase());
-    if (studentAccount && studentAccount.parentPassword) {
-      if (trimmedPassword === studentAccount.parentPassword) {
-          onLogin({ ...studentAccount, role: Role.Parent });
-          return;
-      }
+    if (studentAccount) {
+        if (studentAccount.status === 'archived') {
+            setError('This account has been archived and is inactive.');
+            setIsLoading(false);
+            return;
+        }
+        if (studentAccount.parentPassword && trimmedPassword === studentAccount.parentPassword) {
+            onLogin({ ...studentAccount, role: Role.Parent });
+            return;
+        }
     }
 
     // If we reach this point, no user was found with the given credentials.

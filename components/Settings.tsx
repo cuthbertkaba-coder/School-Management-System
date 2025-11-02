@@ -353,11 +353,13 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({ onClos
   );
 };
 
-export const AdminChangePasswordModal: React.FC<{
-  userToUpdate: { id: string; name: string; role: Role | 'Parent' };
+export const AdminManageAccountModal: React.FC<{
+  userToUpdate: { id: string; name: string; username: string };
+  isParent: boolean;
   onClose: () => void;
-  onSave: (userId: string, newPassword: string) => void;
-}> = ({ userToUpdate, onClose, onSave }) => {
+  onSave: (userId: string, newUsername: string, newPassword?: string) => void;
+}> = ({ userToUpdate, isParent, onClose, onSave }) => {
+  const [username, setUsername] = useState(userToUpdate.username);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -366,28 +368,32 @@ export const AdminChangePasswordModal: React.FC<{
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setIsLoading(true);
 
-    if (!newPassword || !confirmPassword) {
-      setError('Both fields are required.');
-      setIsLoading(false);
-      return;
-    }
-    if (newPassword !== confirmPassword) {
+    if (newPassword && newPassword !== confirmPassword) {
       setError('Passwords do not match.');
-      setIsLoading(false);
       return;
     }
 
-    onSave(userToUpdate.id, newPassword);
+    if (!username.trim()){
+      setError("Username/ID cannot be empty.");
+      return;
+    }
+    
+    setIsLoading(true);
+    onSave(userToUpdate.id, username, newPassword || undefined);
     setIsLoading(false);
   };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
       <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-md animate-fade-in-up">
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Change Password for {userToUpdate.name}</h2>
+        <h2 className="text-xl font-bold text-slate-800 mb-4">Manage Account for {userToUpdate.name}</h2>
         <form onSubmit={handleSave} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700">{isParent ? 'Student ID (Parent Login)' : 'Username'}</label>
+            <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="mt-1 w-full p-2 border border-slate-300 rounded-lg" />
+          </div>
+          <p className="text-xs text-slate-500">Leave password fields blank to keep the current password.</p>
           <div>
             <label className="block text-sm font-medium text-slate-700">New Password</label>
             <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="mt-1 w-full p-2 border border-slate-300 rounded-lg" />
@@ -400,7 +406,7 @@ export const AdminChangePasswordModal: React.FC<{
           <div className="flex justify-end space-x-4 pt-4">
             <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg">Cancel</button>
             <button type="submit" disabled={isLoading} className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:bg-slate-400">
-              {isLoading ? 'Saving...' : 'Save Password'}
+              {isLoading ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </form>
@@ -408,6 +414,7 @@ export const AdminChangePasswordModal: React.FC<{
     </div>
   );
 };
+
 
 
 export const ForgotPasswordModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {

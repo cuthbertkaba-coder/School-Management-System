@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Staff, User, Role, StaffCategory, SchoolDocument, Settings } from '../types';
 import { mockStaff } from '../data/mockData';
-import { AdminChangePasswordModal } from './Settings';
+import { AdminManageAccountModal } from './Settings';
 import { CLASSES } from '../constants';
 
 const DEFAULT_AVATAR_URL = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NkZDZlMyI+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTguNjg1IDE5LjA5N0E5LjcyMyA5LjcyMyAwIDAwMjEuNzUgMTJjMC01LjM4NS00LjM2NS05Ljc1LTkuNzUtOS43NVM S5MjUgNi42MTUgMi4yNSAxMmE5LjcyMyA5LjcyMyAwIDAwMy4wNjUgNy4wOTdBOTcxNiA5LjcxNiAwIDAwMTIgMjEuNzVhOS4xMTYgOS43MTYgMCAwMDYuNjg1LTIuNjUzem0tMTIuNTQtMS4yODVBNy40ODYgNy40ODYgMCAwMTEyIDE1YTcuNDg2IDcuNDg2IDAgMDE1Ljg1NSAyLjgxMkE4LjIyNCA4LjIyNCAwIDAxMTIgMjAuMjVhOC4yMjQgOC4yMjQgMCAwMS01Ljg1NS0yLjQzOHpNM TcuNzUgOWEzLjc1IDMuNzUgMCAxMS03LjUgMCAzLjc1IDMuNzUgMCAwMTcuNSAwem0iIGNsaXAtcnVsZT0iZXZlbm9kZCIgLz48L3N2Zz4=";
@@ -82,13 +83,16 @@ const StaffDetails: React.FC<{
     onBack: () => void, 
     onUpdate: (staff: Staff) => void, 
     onArchive: (staffId: string) => void,
-    onAdminPasswordChange: (userId: string, newPassword: string) => void;
-}> = ({ staff, user, users, settings, onBack, onUpdate, onArchive, onAdminPasswordChange }) => {
+    onDelete: (staffId: string) => void,
+    onAdminAccountChange: (userId: string, newUsername: string, newPassword?: string) => void;
+}> = ({ staff, user, users, settings, onBack, onUpdate, onArchive, onDelete, onAdminAccountChange }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editableStaff, setEditableStaff] = useState<Staff>(staff);
     const profileRef = useRef<HTMLDivElement>(null);
+    const photoInputRef = useRef<HTMLInputElement>(null);
     const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
-    const [isChangePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
+    const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [isManageAccountModalOpen, setManageAccountModalOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('profile');
 
     const [docName, setDocName] = useState('');
@@ -112,6 +116,17 @@ const StaffDetails: React.FC<{
         } else {
             setEditableStaff(prev => ({ ...prev, [name]: value }));
         }
+    };
+    
+    const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              setEditableStaff(prev => ({...prev, photoUrl: reader.result as string}));
+          };
+          reader.readAsDataURL(file);
+      }
     };
 
     const handleSubjectAssignmentChange = (subject: string, isChecked: boolean) => {
@@ -168,118 +183,146 @@ const StaffDetails: React.FC<{
             )}
         </div>
     );
+
+    const generateUsername = (name: string) => {
+        const nameParts = name.toLowerCase().split(' ').filter(Boolean);
+        if (nameParts.length > 1) {
+            return `${nameParts[0][0]}.${nameParts[nameParts.length - 1]}`;
+        } else if (nameParts.length === 1) {
+            return nameParts[0];
+        }
+        return 'new.user';
+    };
+    const userForModal = userAccount || { id: `new_for_${staff.id}`, name: staff.name, username: generateUsername(staff.name) };
     
     return (
         <>
-            <div ref={profileRef} className="bg-white p-6 rounded-lg shadow-lg animate-fade-in">
-                <button onClick={onBack} className="mb-4 text-blue-600 hover:underline no-print">&larr; Back to Staff List</button>
-                <div className="flex flex-col md:flex-row items-start md:space-x-8">
-                    <div className="text-center mb-6 md:mb-0">
-                        <img src={staff.photoUrl} alt={staff.name} className="w-40 h-40 rounded-full object-cover mx-auto shadow-md" />
-                        <h2 className="text-2xl font-bold text-slate-800 mt-4">{staff.name}</h2>
-                        <p className="text-slate-600">{staff.staffNumber}</p>
-                        <p className="text-sm bg-indigo-100 text-indigo-800 font-medium px-3 py-1 rounded-full inline-block mt-2">{staff.category}</p>
-                        {staff.status === 'archived' && <p className="text-sm bg-yellow-100 text-yellow-800 font-medium px-3 py-1 rounded-full inline-block mt-2">Archived</p>}
-                    </div>
-                    <div className="flex-1 w-full">
-                        <div className="border-b border-slate-200 mb-4 no-print">
-                            <nav className="flex space-x-4">
-                                <button onClick={() => setActiveTab('profile')} className={`py-2 px-1 font-medium ${activeTab === 'profile' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Profile</button>
-                                <button onClick={() => setActiveTab('documents')} className={`py-2 px-1 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Documents</button>
-                            </nav>
+            <div className="bg-white p-6 rounded-lg shadow-lg animate-fade-in">
+                 <div ref={profileRef} className="printable-content-wrapper">
+                    <button onClick={onBack} className="mb-4 text-blue-600 hover:underline no-print">&larr; Back to Staff List</button>
+                    <div className="flex flex-col md:flex-row items-start md:space-x-8">
+                        <div className="text-center mb-6 md:mb-0">
+                            <img src={isEditing ? editableStaff.photoUrl : staff.photoUrl} alt={staff.name} className="w-40 h-40 rounded-full object-cover mx-auto shadow-md" />
+                            {isEditing && (
+                                <div className="no-print">
+                                    <input type="file" accept="image/*" ref={photoInputRef} onChange={handlePhotoChange} className="hidden"/>
+                                    <button onClick={() => photoInputRef.current?.click()} className="mt-2 text-sm bg-slate-200 text-slate-700 px-3 py-1 rounded-md hover:bg-slate-300 transition-colors">Change Photo</button>
+                                </div>
+                            )}
+                            <h2 className="text-2xl font-bold text-slate-800 mt-4">{staff.name}</h2>
+                             <div className="text-slate-600 font-medium mt-1">
+                                {isEditing ? 
+                                    <input type="text" name="staffNumber" value={editableStaff.staffNumber} onChange={handleChange} className="w-full text-center font-mono p-1 border rounded-md border-slate-300 bg-white"/> 
+                                    : <span className="font-mono bg-slate-100 px-2 py-0.5 rounded">{staff.staffNumber}</span>
+                                }
+                            </div>
+                            <p className="text-sm bg-indigo-100 text-indigo-800 font-medium px-3 py-1 rounded-full inline-block mt-2">{staff.category}</p>
+                            {staff.status === 'archived' && <p className="text-sm bg-yellow-100 text-yellow-800 font-medium px-3 py-1 rounded-full inline-block mt-2 no-print">Archived</p>}
                         </div>
-                         {activeTab === 'profile' && <div className="animate-fade-in">
-                            <div className="flex justify-between items-center pb-2 flex-wrap gap-2 mb-4">
-                                <h3 className="font-bold text-lg text-slate-800">Profile Information</h3>
-                                <div className="space-x-2 no-print">
-                                    {isEditing ? (
-                                        <><button onClick={handleSave} className="bg-green-500 text-white px-3 py-1 rounded-md text-sm hover:bg-green-600">Save</button><button onClick={() => setIsEditing(false)} className="bg-slate-500 text-white px-3 py-1 rounded-md text-sm hover:bg-slate-600">Cancel</button></>
-                                    ) : (
-                                        <>
-                                        <button onClick={() => setIsEditing(true)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300">Edit Profile</button>
-                                        <button onClick={() => exportToPdf(profileRef.current!, `Staff_Profile_${staff.id}`)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300">Export PDF</button>
-                                        {canPerformAdminActions && staff.status === 'active' && (
-                                            <button onClick={() => setArchiveModalOpen(true)} className="bg-yellow-500 text-white px-3 py-1 rounded-md text-sm hover:bg-yellow-600">Archive</button>
+                        <div className="flex-1 w-full">
+                            <div className="border-b border-slate-200 mb-4 no-print">
+                                <nav className="flex space-x-4 no-print">
+                                    <button onClick={() => setActiveTab('profile')} className={`py-2 px-1 font-medium ${activeTab === 'profile' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Profile</button>
+                                    <button onClick={() => setActiveTab('documents')} className={`py-2 px-1 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Documents</button>
+                                </nav>
+                            </div>
+                             <div className={activeTab === 'profile' ? 'animate-fade-in' : 'hidden'}>
+                                <div className="flex justify-between items-center pb-2 flex-wrap gap-2 mb-4">
+                                    <h3 className="font-bold text-lg text-slate-800">Profile Information</h3>
+                                    <div className="space-x-2 no-print">
+                                        {isEditing ? (
+                                            <><button onClick={handleSave} className="bg-green-500 text-white px-3 py-1 rounded-md text-sm hover:bg-green-600">Save</button><button onClick={() => setIsEditing(false)} className="bg-slate-500 text-white px-3 py-1 rounded-md text-sm hover:bg-slate-600">Cancel</button></>
+                                        ) : (
+                                            <>
+                                            <button onClick={() => setIsEditing(true)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300">Edit Profile</button>
+                                            <button onClick={() => exportToPdf(profileRef.current!, `Staff_Profile_${staff.id}`)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300">Export PDF</button>
+                                            <button onClick={() => window.print()} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300">Print Profile</button>
+                                            </>
                                         )}
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-slate-700">
+                                   {renderField('Full Name', editableStaff.name, 'name')}
+                                   {renderField('Email Address', editableStaff.email, 'email', 'email')}
+                                   {renderField('Contact Number', editableStaff.contact, 'contact', 'tel')}
+                                   {renderField('Year of Employment', editableStaff.employmentYear, 'employmentYear', 'number')}
+                                   {renderField('Employment Type', editableStaff.employmentType, 'employmentType', 'select', ['Full-time', 'Part-time', 'Volunteer'])}
+                                   <div className="sm:col-span-2">{renderField('Qualifications', editableStaff.qualifications, 'qualifications', 'textarea')}</div>
+                                   {renderField("Emergency Contact Name", editableStaff.emergencyContact.name, 'emergencyContact.name')}
+                                   {renderField("Emergency Contact Phone", editableStaff.emergencyContact.phone, 'emergencyContact.phone', 'tel')}
+                                   <div className="sm:col-span-2">{renderField('Assigned School Roles', editableStaff.schoolRoles, 'schoolRoles', 'textarea')}</div>
+
+                                    {editableStaff.category === StaffCategory.Teaching && (
+                                        <>
+                                            <div className="sm:col-span-2"><hr className="my-2" /></div>
+                                            
+                                            {/* Assigned Class */}
+                                            {renderField('Assigned Class', editableStaff.assignedClass || 'None', 'assignedClass', 'select', ['None', ...CLASSES])}
+
+                                            {/* Assigned Subjects */}
+                                            <div className="sm:col-span-2">
+                                                <strong className="block mb-1 text-sm text-slate-600">Assigned Subjects</strong>
+                                                {isEditing ? (
+                                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-2 border rounded-md max-h-40 overflow-y-auto bg-white">
+                                                        {settings.schoolSubjects.map(subject => (
+                                                            <label key={subject} className="flex items-center text-sm">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={editableStaff.assignedSubjects?.includes(subject) || false}
+                                                                    onChange={(e) => handleSubjectAssignmentChange(subject, e.target.checked)}
+                                                                    className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 mr-2"
+                                                                />
+                                                                {subject}
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                <p className="p-2 bg-slate-50 rounded-md min-h-[40px]">{editableStaff.assignedSubjects?.join(', ') || 'N/A'}</p>
+                                                )}
+                                            </div>
                                         </>
                                     )}
                                 </div>
-                            </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-slate-700">
-                               {renderField('Full Name', editableStaff.name, 'name')}
-                               {renderField('Email Address', editableStaff.email, 'email', 'email')}
-                               {renderField('Contact Number', editableStaff.contact, 'contact', 'tel')}
-                               {renderField('Year of Employment', editableStaff.employmentYear, 'employmentYear', 'number')}
-                               {renderField('Employment Type', editableStaff.employmentType, 'employmentType', 'select', ['Full-time', 'Part-time', 'Volunteer'])}
-                               <div className="sm:col-span-2">{renderField('Qualifications', editableStaff.qualifications, 'qualifications', 'textarea')}</div>
-                               {renderField("Emergency Contact Name", editableStaff.emergencyContact.name, 'emergencyContact.name')}
-                               {renderField("Emergency Contact Phone", editableStaff.emergencyContact.phone, 'emergencyContact.phone', 'tel')}
-                               <div className="sm:col-span-2">{renderField('Assigned School Roles', editableStaff.schoolRoles, 'schoolRoles', 'textarea')}</div>
-
-                                {editableStaff.category === StaffCategory.Teaching && (
-                                    <>
-                                        <div className="sm:col-span-2"><hr className="my-2" /></div>
-                                        
-                                        {/* Assigned Class */}
-                                        {renderField('Assigned Class', editableStaff.assignedClass || 'None', 'assignedClass', 'select', ['None', ...CLASSES])}
-
-                                        {/* Assigned Subjects */}
-                                        <div className="sm:col-span-2">
-                                            <strong className="block mb-1 text-sm text-slate-600">Assigned Subjects</strong>
-                                            {isEditing ? (
-                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-2 border rounded-md max-h-40 overflow-y-auto bg-white">
-                                                    {settings.schoolSubjects.map(subject => (
-                                                        <label key={subject} className="flex items-center text-sm">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={editableStaff.assignedSubjects?.includes(subject) || false}
-                                                                onChange={(e) => handleSubjectAssignmentChange(subject, e.target.checked)}
-                                                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 mr-2"
-                                                            />
-                                                            {subject}
-                                                        </label>
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                            <p className="p-2 bg-slate-50 rounded-md min-h-[40px]">{editableStaff.assignedSubjects?.join(', ') || 'N/A'}</p>
-                                            )}
+                                {canPerformAdminActions && (
+                                    <div className="border-t mt-6 pt-4 no-print">
+                                        <h3 className="font-bold text-lg text-slate-800 mb-2">Administrative Actions</h3>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button onClick={() => setManageAccountModalOpen(true)} className="text-sm bg-slate-600 text-white px-3 py-1.5 rounded-md hover:bg-slate-700 transition-colors">{userAccount ? 'Manage Account' : 'Create Account'}</button>
+                                            {staff.status === 'active' &&
+                                                <>
+                                                    <button onClick={() => setArchiveModalOpen(true)} className="text-sm bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600">Archive</button>
+                                                    <button onClick={() => setDeleteModalOpen(true)} className="text-sm bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700">Delete</button>
+                                                </>
+                                            }
                                         </div>
-                                    </>
-                                )}
-                            </div>
-                            {canPerformAdminActions && staff.status === 'active' && userAccount && (
-                                <div className="border-t mt-6 pt-4 no-print">
-                                    <h3 className="font-bold text-lg text-slate-800 mb-2">Administrative Actions</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        <button onClick={() => setChangePasswordModalOpen(true)} className="text-sm bg-slate-600 text-white px-3 py-1.5 rounded-md hover:bg-slate-700 transition-colors">Change Password</button>
                                     </div>
-                                </div>
-                            )}
-                         </div>}
-                         {activeTab === 'documents' && <div className="animate-fade-in">
-                             <h3 className="font-bold text-lg text-slate-800 mb-4">Staff Documents</h3>
-                             <form onSubmit={handleAddDocument} className="mb-6 p-4 bg-slate-50 border rounded-lg flex items-end space-x-4">
-                                <div className="flex-grow">
-                                    <label className="block text-sm font-medium text-slate-700">Document Name</label>
-                                    <input type="text" value={docName} onChange={e => setDocName(e.target.value)} className="mt-1 w-full p-2 border border-slate-300 rounded-lg"/>
-                                </div>
-                                 <div className="flex-grow">
-                                    <label className="block text-sm font-medium text-slate-700">File</label>
-                                    <input type="file" ref={docFileRef} className="mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
-                                </div>
-                                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Upload</button>
-                             </form>
-                             <div className="space-y-2">
-                                {editableStaff.documents && editableStaff.documents.length > 0 ? (
-                                    editableStaff.documents.map((doc, i) => (
-                                        <div key={i} className="flex justify-between items-center p-2 bg-white border rounded">
-                                            <span>{doc.name}</span>
-                                            <span className="text-sm text-slate-500">{doc.date}</span>
-                                        </div>
-                                    ))
-                                ) : <p className="text-slate-500">No documents uploaded.</p>}
+                                )}
                              </div>
-                         </div>}
+                             <div className={activeTab === 'documents' ? 'animate-fade-in no-print' : 'hidden no-print'}>
+                                 <h3 className="font-bold text-lg text-slate-800 mb-4">Staff Documents</h3>
+                                 <form onSubmit={handleAddDocument} className="mb-6 p-4 bg-slate-50 border rounded-lg flex items-end space-x-4">
+                                    <div className="flex-grow">
+                                        <label className="block text-sm font-medium text-slate-700">Document Name</label>
+                                        <input type="text" value={docName} onChange={e => setDocName(e.target.value)} className="mt-1 w-full p-2 border border-slate-300 rounded-lg"/>
+                                    </div>
+                                     <div className="flex-grow">
+                                        <label className="block text-sm font-medium text-slate-700">File</label>
+                                        <input type="file" ref={docFileRef} className="mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                                    </div>
+                                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Upload</button>
+                                 </form>
+                                 <div className="space-y-2">
+                                    {editableStaff.documents && editableStaff.documents.length > 0 ? (
+                                        editableStaff.documents.map((doc, i) => (
+                                            <div key={i} className="flex justify-between items-center p-2 bg-white border rounded">
+                                                <span>{doc.name}</span>
+                                                <span className="text-sm text-slate-500">{doc.date}</span>
+                                            </div>
+                                        ))
+                                    ) : <p className="text-slate-500">No documents uploaded.</p>}
+                                 </div>
+                             </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -293,13 +336,24 @@ const StaffDetails: React.FC<{
                     onClose={() => setArchiveModalOpen(false)}
                 />
             )}
-            {isChangePasswordModalOpen && userAccount && (
-                <AdminChangePasswordModal
-                    userToUpdate={{ id: userAccount.id, name: staff.name, role: userAccount.role }}
-                    onClose={() => setChangePasswordModalOpen(false)}
-                    onSave={(userId, newPassword) => {
-                        onAdminPasswordChange(userId, newPassword);
-                        setChangePasswordModalOpen(false);
+             {isDeleteModalOpen && (
+                <ConfirmationModal
+                    title="Delete Staff Member"
+                    message={<>Are you sure you want to permanently delete <strong>{staff.name}</strong>? This action cannot be undone.</>}
+                    confirmText="Delete"
+                    confirmClass="bg-red-600 hover:bg-red-700"
+                    onConfirm={() => { onDelete(staff.id); setDeleteModalOpen(false); }}
+                    onClose={() => setDeleteModalOpen(false)}
+                />
+            )}
+            {isManageAccountModalOpen && (
+                <AdminManageAccountModal
+                    userToUpdate={userForModal}
+                    isParent={false}
+                    onClose={() => setManageAccountModalOpen(false)}
+                    onSave={(userId, newUsername, newPassword) => {
+                        onAdminAccountChange(userId, newUsername, newPassword);
+                        setManageAccountModalOpen(false);
                     }}
                 />
             )}
@@ -418,8 +472,9 @@ export const StaffPage: React.FC<{
     settings: Settings,
     onUpdateStaff: (staff: Staff) => void, 
     onAddStaffAndUser: any,
-    onAdminPasswordChange: (userId: string, newPassword: string) => void;
-}> = ({ user, staff, users, settings, onUpdateStaff, onAddStaffAndUser, onAdminPasswordChange }) => {
+    onDeleteStaff: (staffId: string) => void,
+    onAdminAccountChange: (userId: string, newUsername: string, newPassword?: string) => void;
+}> = ({ user, staff, users, settings, onUpdateStaff, onAddStaffAndUser, onDeleteStaff, onAdminAccountChange }) => {
     const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
     const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
     const [activeCategory, setActiveCategory] = useState<StaffCategory>(StaffCategory.Teaching);
@@ -430,6 +485,11 @@ export const StaffPage: React.FC<{
         if (staffToUpdate) {
             onUpdateStaff({ ...staffToUpdate, status: 'archived' });
         }
+        setSelectedStaff(null);
+    };
+
+     const handleDeleteStaff = (staffId: string) => {
+        onDeleteStaff(staffId);
         setSelectedStaff(null);
     };
     
@@ -448,7 +508,8 @@ export const StaffPage: React.FC<{
                     onBack={() => setSelectedStaff(null)} 
                     onUpdate={onUpdateStaff} 
                     onArchive={handleArchiveStaff} 
-                    onAdminPasswordChange={onAdminPasswordChange} 
+                    onDelete={handleDeleteStaff}
+                    onAdminAccountChange={onAdminAccountChange} 
                 />
             </div>
         );
