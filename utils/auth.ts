@@ -1,10 +1,11 @@
-// A simple async SHA-256 hashing function to simulate password hashing.
-// In a real application, use a library like bcrypt and run this on the server.
-export const hashPassword = async (password: string): Promise<string> => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(password);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-  return hashHex;
+import { Student } from "../types";
+
+// The hashPassword function has been removed to switch to plaintext passwords for reliability in the demo environment.
+
+export const calculateFinancials = (financials: Student['financials']) => {
+    const totalFees = financials.feeItems.reduce((sum, item) => sum + item.amount, 0);
+    const totalDiscounts = financials.discounts.reduce((sum, item) => sum + item.amount, 0);
+    const paid = financials.payments.reduce((sum, item) => sum + item.amount, 0);
+    const balance = totalFees - totalDiscounts - paid;
+    return { totalFees, totalDiscounts, paid, balance };
 };

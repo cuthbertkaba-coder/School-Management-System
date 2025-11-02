@@ -1,9 +1,10 @@
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Staff, User, Role, StaffCategory, SchoolDocument, Settings } from '../types';
+import { mockStaff } from '../data/mockData';
+import { AdminChangePasswordModal } from './Settings';
+import { CLASSES } from '../constants';
 
-
-import React, { useState, useEffect, useRef } from 'react';
-import { Teacher, User, Role } from '../types';
-import { mockTeachers } from '../data/mockData';
-import { CLASSES_JUNIOR, SUBJECTS, SCHOOL_ROLES, SCHOOL_NAME } from '../constants';
+const DEFAULT_AVATAR_URL = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NkZDZlMyI+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTguNjg1IDE5LjA5N0E5LjcyMyA5LjcyMyAwIDAwMjEuNzUgMTJjMC01LjM4NS00LjM2NS05Ljc1LTkuNzUtOS43NVM S5MjUgNi42MTUgMi4yNSAxMmE5LjcyMyA5LjcyMyAwIDAwMy4wNjUgNy4wOTdBOTcxNiA5LjcxNiAwIDAwMTIgMjEuNzVhOS4xMTYgOS43MTYgMCAwMDYuNjg1LTIuNjUzem0tMTIuNTQtMS4yODVBNy40ODYgNy40ODYgMCAwMTEyIDE1YTcuNDg2IDcuNDg2IDAgMDE1Ljg1NSAyLjgxMkE4LjIyNCA4LjIyNCAwIDAxMTIgMjAuMjVhOC4yMjQgOC4yMjQgMCAwMS01Ljg1NS0yLjQzOHpNM TcuNzUgOWEzLjc1IDMuNzUgMCAxMS03LjUgMCAzLjc1IDMuNzUgMCAwMTcuNSAwem0iIGNsaXAtcnVsZT0iZXZlbm9kZCIgLz48L3N2Zz4=";
 
 declare global {
     interface Window {
@@ -61,310 +62,426 @@ const ConfirmationModal: React.FC<{
     </div>
 );
 
-const Modal: React.FC<{ children: React.ReactNode; title: string; }> = ({ children, title }) => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4">
-        <style>{keyframes}</style>
-        <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-lg" style={animationStyle}>
-            <h2 className="text-xl font-bold text-slate-800 mb-4">{title}</h2>
-            {children}
+
+const StaffCard: React.FC<{ staff: Staff, onSelect: (staff: Staff) => void }> = ({ staff, onSelect }) => (
+    <div onClick={() => onSelect(staff)} className="bg-white p-4 rounded-lg shadow-sm hover:shadow-lg transition-shadow cursor-pointer flex items-center space-x-4">
+        <img src={staff.photoUrl} alt={staff.name} className="w-16 h-16 rounded-full object-cover" />
+        <div>
+            <p className="font-bold text-slate-800">{staff.name}</p>
+            <p className="text-sm text-slate-500">{staff.staffNumber}</p>
+            <p className="text-sm text-blue-600 font-medium">{staff.assignedClass || staff.assignedSubjects?.join(', ')}</p>
         </div>
     </div>
 );
 
-const AssignRoleModal: React.FC<{ teacher: Teacher, onClose: () => void, onSave: (teacher: Teacher) => void }> = ({ teacher, onClose, onSave }) => {
-    const [roleType, setRoleType] = useState<'class' | 'subjects'>(teacher.assignedClass ? 'class' : (teacher.assignedSubjects?.length ? 'subjects' : 'class'));
-    const [classSelection, setClassSelection] = useState(teacher.assignedClass || '');
-    const [subjectSelection, setSubjectSelection] = useState<Set<string>>(new Set(teacher.assignedSubjects || []));
+const StaffDetails: React.FC<{ 
+    staff: Staff, 
+    user: User, 
+    users: User[],
+    settings: Settings,
+    onBack: () => void, 
+    onUpdate: (staff: Staff) => void, 
+    onArchive: (staffId: string) => void,
+    onAdminPasswordChange: (userId: string, newPassword: string) => void;
+}> = ({ staff, user, users, settings, onBack, onUpdate, onArchive, onAdminPasswordChange }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [editableStaff, setEditableStaff] = useState<Staff>(staff);
+    const profileRef = useRef<HTMLDivElement>(null);
+    const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
+    const [isChangePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState('profile');
 
-    const handleSubjectChange = (subject: string) => {
-        const newSelection = new Set(subjectSelection);
-        newSelection.has(subject) ? newSelection.delete(subject) : newSelection.add(subject);
-        setSubjectSelection(newSelection);
-    };
+    const [docName, setDocName] = useState('');
+    const docFileRef = useRef<HTMLInputElement>(null);
 
-    const handleSave = () => {
-        const updatedTeacher = { ...teacher };
-        if (roleType === 'class') {
-            updatedTeacher.assignedClass = classSelection;
-            delete updatedTeacher.assignedSubjects;
+    const userAccount = useMemo(() => users.find(u => u.staffId === staff.id), [users, staff.id]);
+    const canPerformAdminActions = useMemo(() => user.role === Role.Admin || user.role === Role.Headteacher, [user.role]);
+
+    useEffect(() => { setEditableStaff(staff); }, [staff]);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        if (name.startsWith('emergencyContact.')) {
+            const field = name.split('.')[1] as 'name' | 'phone';
+            setEditableStaff(prev => ({
+                ...prev,
+                emergencyContact: { ...prev.emergencyContact, [field]: value }
+            }));
+        } else if (name === 'assignedClass' && value === 'None') {
+            setEditableStaff(prev => ({ ...prev, assignedClass: undefined }));
         } else {
-            updatedTeacher.assignedSubjects = Array.from(subjectSelection);
-            delete updatedTeacher.assignedClass;
+            setEditableStaff(prev => ({ ...prev, [name]: value }));
         }
-        onSave(updatedTeacher);
     };
 
-    return (
-        <Modal title={`Assign Teaching Role for ${teacher.name}`}>
-            <div className="space-y-4">
-                <fieldset className="border border-slate-200 p-3 rounded-lg">
-                    <legend className="text-sm font-medium text-slate-600 px-1">Role Type</legend>
-                    <div className="flex space-x-4">
-                        <label className="flex items-center cursor-pointer"><input type="radio" name="roleType" value="class" checked={roleType === 'class'} onChange={() => setRoleType('class')} className="mr-2 h-4 w-4 text-sky-600 focus:ring-sky-500 border-slate-300" />Class Teacher (Creche - Basic 6)</label>
-                        <label className="flex items-center cursor-pointer"><input type="radio" name="roleType" value="subjects" checked={roleType === 'subjects'} onChange={() => setRoleType('subjects')} className="mr-2 h-4 w-4 text-sky-600 focus:ring-sky-500 border-slate-300" />Subject Teacher (Basic 7 - 9)</label>
-                    </div>
-                </fieldset>
-                {roleType === 'class' ? (
-                    <div>
-                        <label htmlFor="class-select" className="block text-sm font-medium text-slate-700 mb-1">Select Class</label>
-                        <select id="class-select" value={classSelection} onChange={e => setClassSelection(e.target.value)} className="w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"><option value="" disabled>-- Select a class --</option>{CLASSES_JUNIOR.map(c => <option key={c} value={c}>{c}</option>)}</select>
-                    </div>
-                ) : (
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">Select Subjects</label>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 border p-3 rounded-lg max-h-48 overflow-y-auto bg-slate-50">{SUBJECTS.map(s => (<label key={s} className="flex items-center text-sm cursor-pointer p-1 rounded hover:bg-slate-200"><input type="checkbox" checked={subjectSelection.has(s)} onChange={() => handleSubjectChange(s)} className="mr-2 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />{s}</label>))}</div>
-                    </div>
-                )}
-            </div>
-            <div className="flex justify-end space-x-4 mt-6">
-                <button onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 transition-colors">Cancel</button>
-                <button onClick={handleSave} disabled={roleType === 'class' && !classSelection} className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors disabled:bg-slate-400 disabled:cursor-not-allowed">Save Assignment</button>
-            </div>
-        </Modal>
-    );
-};
-
-const AssignSchoolRoleModal: React.FC<{ teacher: Teacher; onClose: () => void; onSave: (roles: string[]) => void; }> = ({ teacher, onClose, onSave }) => {
-    const [selectedRoles, setSelectedRoles] = useState<Set<string>>(new Set(teacher.schoolRoles || []));
-    const handleRoleChange = (role: string) => {
-        const newSelection = new Set(selectedRoles);
-        newSelection.has(role) ? newSelection.delete(role) : newSelection.add(role);
-        setSelectedRoles(newSelection);
+    const handleSubjectAssignmentChange = (subject: string, isChecked: boolean) => {
+        setEditableStaff(prev => {
+            const currentSubjects = prev.assignedSubjects || [];
+            const newSubjects = isChecked
+                ? [...currentSubjects, subject]
+                : currentSubjects.filter(s => s !== subject);
+            return { ...prev, assignedSubjects: newSubjects.sort() };
+        });
     };
-    return (
-        <Modal title={`Assign School Roles for ${teacher.name}`}>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 border p-3 rounded-lg max-h-60 overflow-y-auto bg-slate-50">
-                {SCHOOL_ROLES.map(role => (
-                    <label key={role} className="flex items-center text-sm cursor-pointer p-1 rounded hover:bg-slate-200">
-                        <input type="checkbox" checked={selectedRoles.has(role)} onChange={() => handleRoleChange(role)} className="mr-2 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
-                        {role}
-                    </label>
-                ))}
-            </div>
-            <div className="flex justify-end space-x-4 mt-6">
-                <button onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 transition-colors">Cancel</button>
-                <button onClick={() => onSave(Array.from(selectedRoles))} className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors">Save Roles</button>
-            </div>
-        </Modal>
-    );
-};
+    
+    const handleSave = () => {
+        const qualificationsArray = typeof editableStaff.qualifications === 'string'
+            ? (editableStaff.qualifications as string).split(',').map(q => q.trim()).filter(Boolean)
+            : editableStaff.qualifications;
+        const schoolRolesArray = typeof editableStaff.schoolRoles === 'string'
+            ? (editableStaff.schoolRoles as string).split(',').map(q => q.trim()).filter(Boolean)
+            : editableStaff.schoolRoles;
 
-const UploadDocumentModal: React.FC<{ onClose: () => void; onSave: (doc: { name: string; url: string; date: string }) => void; }> = ({ onClose, onSave }) => {
-    const [name, setName] = useState('');
-    const [file, setFile] = useState<File | null>(null);
-    const handleSubmit = (e: React.FormEvent) => {
+        onUpdate({ ...editableStaff, qualifications: qualificationsArray, schoolRoles: schoolRolesArray });
+        setIsEditing(false);
+    };
+
+    const handleAddDocument = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!name.trim() || !file) {
+        const file = docFileRef.current?.files?.[0];
+        if (!docName.trim() || !file) {
             alert("Please provide a document name and select a file.");
             return;
         }
-        onSave({ name: name.trim(), url: '#', date: new Date().toISOString().split('T')[0] });
+        const newDoc: SchoolDocument = {
+            name: docName,
+            url: '#', // Placeholder URL
+            date: new Date().toISOString().split('T')[0]
+        };
+        const updatedStaff = {...staff, documents: [...(staff.documents || []), newDoc] };
+        onUpdate(updatedStaff);
+        setDocName('');
+        if(docFileRef.current) docFileRef.current.value = '';
     };
-    return (
-        <Modal title="Upload New Document">
-            <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                    <label className="block text-sm font-medium text-slate-700">Document Name</label>
-                    <input type="text" value={name} onChange={e => setName(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
-                </div>
-                <div>
-                    <label className="block text-sm font-medium text-slate-700">File</label>
-                    <input type="file" onChange={e => setFile(e.target.files?.[0] || null)} required className="mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100"/>
-                </div>
-                <div className="flex justify-end space-x-4 pt-4">
-                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 transition-colors">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors">Upload</button>
-                </div>
-            </form>
-        </Modal>
-    );
-};
 
-const TeacherCard: React.FC<{ teacher: Teacher, onSelect: (teacher: Teacher) => void }> = ({ teacher, onSelect }) => (
-    <div onClick={() => onSelect(teacher)} className="bg-white p-4 rounded-lg shadow-sm hover:shadow-lg transition-shadow cursor-pointer flex items-center space-x-4">
-        <img src={teacher.photoUrl} alt={teacher.name} className="w-16 h-16 rounded-full object-cover" />
-        <div>
-            <p className="font-bold text-slate-800">{teacher.name}</p>
-            <p className="text-sm text-slate-500">{teacher.staffNumber}</p>
-            <p className="text-sm text-sky-600 font-medium">{teacher.assignedClass || teacher.assignedSubjects?.join(', ')}</p>
+    const renderField = (label: string, value: any, name: string, type: 'text' | 'textarea' | 'number' | 'email' | 'tel' | 'select' = 'text', options: string[] = []) => (
+         <div>
+            <strong className="block mb-1 text-sm text-slate-600">{label}</strong>
+            {isEditing ? (
+                 type === 'textarea' ?
+                 <textarea name={name} value={Array.isArray(value) ? value.join(', ') : value} onChange={handleChange} className="w-full p-2 border rounded-md border-slate-300 bg-white focus:ring-2 focus:ring-blue-500" rows={2}/>
+                 : type === 'select' ?
+                 <select name={name} value={value} onChange={handleChange} className="w-full p-2 border rounded-md border-slate-300 bg-white focus:ring-2 focus:ring-blue-500">{options.map(o => <option key={o} value={o}>{o}</option>)}</select>
+                 : <input type={type} name={name} value={value} onChange={handleChange} className="w-full p-2 border rounded-md border-slate-300 bg-white focus:ring-2 focus:ring-blue-500"/>
+            ) : (
+                <p className="p-2 bg-slate-50 rounded-md min-h-[40px]">{Array.isArray(value) ? value.join(', ') || 'N/A' : value}</p>
+            )}
         </div>
-    </div>
-);
-
-const TeacherDetails: React.FC<{ teacher: Teacher, user: User, onBack: () => void, onUpdate: (teacher: Teacher) => void, onArchive: (teacherId: string) => void, onOpenAssignModal: () => void, onOpenSchoolRoleModal: () => void, onOpenUploadModal: () => void }> = ({ teacher, user, onBack, onUpdate, onArchive, onOpenAssignModal, onOpenSchoolRoleModal, onOpenUploadModal }) => {
-    const [isEditing, setIsEditing] = useState(false);
-    const [editableTeacher, setEditableTeacher] = useState<Teacher>(teacher);
-    const profileRef = useRef<HTMLDivElement>(null);
-    const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
-
-    useEffect(() => { setEditableTeacher(teacher); }, [teacher]);
-
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-        setEditableTeacher(prev => ({ ...prev, [e.target.name]: e.target.value }));
-    };
-
-    const handleSave = () => {
-        const qualificationsArray = typeof editableTeacher.qualifications === 'string'
-            ? (editableTeacher.qualifications as string).split(',').map(q => q.trim()).filter(Boolean)
-            : editableTeacher.qualifications;
-        onUpdate({ ...editableTeacher, qualifications: qualificationsArray });
-        setIsEditing(false);
-    };
+    );
     
     return (
         <>
             <div ref={profileRef} className="bg-white p-6 rounded-lg shadow-lg animate-fade-in">
-                <button onClick={onBack} className="mb-4 text-sky-600 hover:underline no-print">&larr; Back to Teacher List</button>
+                <button onClick={onBack} className="mb-4 text-blue-600 hover:underline no-print">&larr; Back to Staff List</button>
                 <div className="flex flex-col md:flex-row items-start md:space-x-8">
                     <div className="text-center mb-6 md:mb-0">
-                        <img src={teacher.photoUrl} alt={teacher.name} className="w-40 h-40 rounded-full object-cover mx-auto shadow-md" />
-                        <h2 className="text-2xl font-bold text-slate-800 mt-4">{teacher.name}</h2>
-                        <p className="text-slate-600">{teacher.staffNumber}</p>
-                        {teacher.status === 'archived' && <p className="text-sm bg-yellow-100 text-yellow-800 font-medium px-3 py-1 rounded-full inline-block mt-2">Archived</p>}
+                        <img src={staff.photoUrl} alt={staff.name} className="w-40 h-40 rounded-full object-cover mx-auto shadow-md" />
+                        <h2 className="text-2xl font-bold text-slate-800 mt-4">{staff.name}</h2>
+                        <p className="text-slate-600">{staff.staffNumber}</p>
+                        <p className="text-sm bg-indigo-100 text-indigo-800 font-medium px-3 py-1 rounded-full inline-block mt-2">{staff.category}</p>
+                        {staff.status === 'archived' && <p className="text-sm bg-yellow-100 text-yellow-800 font-medium px-3 py-1 rounded-full inline-block mt-2">Archived</p>}
                     </div>
-                    <div className="flex-1 w-full space-y-4">
-                        <div className="flex justify-between items-center border-b pb-2 flex-wrap gap-2">
-                            <h3 className="font-bold text-lg text-slate-800">Profile Information</h3>
-                            <div className="space-x-2 no-print">
-                                {isEditing ? (
-                                    <><button onClick={handleSave} className="bg-green-500 text-white px-3 py-1 rounded-md text-sm hover:bg-green-600">Save</button><button onClick={() => setIsEditing(false)} className="bg-slate-500 text-white px-3 py-1 rounded-md text-sm hover:bg-slate-600">Cancel</button></>
-                                ) : (
-                                    <>
-                                    <button onClick={() => setIsEditing(true)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300">Edit Profile</button>
-                                    <button onClick={() => exportToPdf(profileRef.current!, `Teacher_Profile_${teacher.id}`)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300">Export PDF</button>
-                                    <button onClick={() => window.print()} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300">Print</button>
-                                    {(user.role === Role.Admin || user.role === Role.Headteacher) && teacher.status === 'active' && (
-                                        <button onClick={() => setArchiveModalOpen(true)} className="bg-yellow-500 text-white px-3 py-1 rounded-md text-sm hover:bg-yellow-600">Archive</button>
+                    <div className="flex-1 w-full">
+                        <div className="border-b border-slate-200 mb-4 no-print">
+                            <nav className="flex space-x-4">
+                                <button onClick={() => setActiveTab('profile')} className={`py-2 px-1 font-medium ${activeTab === 'profile' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Profile</button>
+                                <button onClick={() => setActiveTab('documents')} className={`py-2 px-1 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Documents</button>
+                            </nav>
+                        </div>
+                         {activeTab === 'profile' && <div className="animate-fade-in">
+                            <div className="flex justify-between items-center pb-2 flex-wrap gap-2 mb-4">
+                                <h3 className="font-bold text-lg text-slate-800">Profile Information</h3>
+                                <div className="space-x-2 no-print">
+                                    {isEditing ? (
+                                        <><button onClick={handleSave} className="bg-green-500 text-white px-3 py-1 rounded-md text-sm hover:bg-green-600">Save</button><button onClick={() => setIsEditing(false)} className="bg-slate-500 text-white px-3 py-1 rounded-md text-sm hover:bg-slate-600">Cancel</button></>
+                                    ) : (
+                                        <>
+                                        <button onClick={() => setIsEditing(true)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300">Edit Profile</button>
+                                        <button onClick={() => exportToPdf(profileRef.current!, `Staff_Profile_${staff.id}`)} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300">Export PDF</button>
+                                        {canPerformAdminActions && staff.status === 'active' && (
+                                            <button onClick={() => setArchiveModalOpen(true)} className="bg-yellow-500 text-white px-3 py-1 rounded-md text-sm hover:bg-yellow-600">Archive</button>
+                                        )}
+                                        </>
                                     )}
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-slate-700">
+                               {renderField('Full Name', editableStaff.name, 'name')}
+                               {renderField('Email Address', editableStaff.email, 'email', 'email')}
+                               {renderField('Contact Number', editableStaff.contact, 'contact', 'tel')}
+                               {renderField('Year of Employment', editableStaff.employmentYear, 'employmentYear', 'number')}
+                               {renderField('Employment Type', editableStaff.employmentType, 'employmentType', 'select', ['Full-time', 'Part-time', 'Volunteer'])}
+                               <div className="sm:col-span-2">{renderField('Qualifications', editableStaff.qualifications, 'qualifications', 'textarea')}</div>
+                               {renderField("Emergency Contact Name", editableStaff.emergencyContact.name, 'emergencyContact.name')}
+                               {renderField("Emergency Contact Phone", editableStaff.emergencyContact.phone, 'emergencyContact.phone', 'tel')}
+                               <div className="sm:col-span-2">{renderField('Assigned School Roles', editableStaff.schoolRoles, 'schoolRoles', 'textarea')}</div>
+
+                                {editableStaff.category === StaffCategory.Teaching && (
+                                    <>
+                                        <div className="sm:col-span-2"><hr className="my-2" /></div>
+                                        
+                                        {/* Assigned Class */}
+                                        {renderField('Assigned Class', editableStaff.assignedClass || 'None', 'assignedClass', 'select', ['None', ...CLASSES])}
+
+                                        {/* Assigned Subjects */}
+                                        <div className="sm:col-span-2">
+                                            <strong className="block mb-1 text-sm text-slate-600">Assigned Subjects</strong>
+                                            {isEditing ? (
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-2 border rounded-md max-h-40 overflow-y-auto bg-white">
+                                                    {settings.schoolSubjects.map(subject => (
+                                                        <label key={subject} className="flex items-center text-sm">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={editableStaff.assignedSubjects?.includes(subject) || false}
+                                                                onChange={(e) => handleSubjectAssignmentChange(subject, e.target.checked)}
+                                                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 mr-2"
+                                                            />
+                                                            {subject}
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                            <p className="p-2 bg-slate-50 rounded-md min-h-[40px]">{editableStaff.assignedSubjects?.join(', ') || 'N/A'}</p>
+                                            )}
+                                        </div>
                                     </>
                                 )}
                             </div>
-                        </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-slate-700">
-                            <div><strong>Year of Employment:</strong> {teacher.employmentYear}</div>
-                            <div>
-                                <strong>Email:</strong>
-                                {isEditing ? <input type="email" name="email" value={editableTeacher.email} onChange={handleChange} className="w-full p-1 border rounded-md mt-1 border-slate-300"/> : ` ${teacher.email}`}
-                            </div>
-                            <div>
-                                <strong>Contact:</strong>
-                                {isEditing ? <input name="contact" value={editableTeacher.contact} onChange={handleChange} className="w-full p-1 border rounded-md mt-1 border-slate-300"/> : ` ${teacher.contact}`}
-                                {!isEditing && (
-                                    <div className="mt-2 space-x-2 no-print">
-                                        <a href={`sms:${teacher.contact}`} className="text-xs bg-slate-200 text-slate-700 px-3 py-1 rounded-md hover:bg-slate-300 transition-colors">Send SMS</a>
-                                        <a href={`mailto:${teacher.email}?subject=Message from ${SCHOOL_NAME}`} className="text-xs bg-sky-100 text-sky-800 px-3 py-1 rounded-md hover:bg-sky-200 transition-colors">Send Email</a>
+                            {canPerformAdminActions && staff.status === 'active' && userAccount && (
+                                <div className="border-t mt-6 pt-4 no-print">
+                                    <h3 className="font-bold text-lg text-slate-800 mb-2">Administrative Actions</h3>
+                                    <div className="flex flex-wrap gap-2">
+                                        <button onClick={() => setChangePasswordModalOpen(true)} className="text-sm bg-slate-600 text-white px-3 py-1.5 rounded-md hover:bg-slate-700 transition-colors">Change Password</button>
                                     </div>
-                                )}
-                            </div>
-                            <div className="sm:col-span-2"><strong>Qualifications:</strong>{isEditing ? <textarea name="qualifications" value={Array.isArray(editableTeacher.qualifications) ? editableTeacher.qualifications.join(', ') : editableTeacher.qualifications} onChange={handleChange} className="w-full p-1 border rounded-md mt-1 border-slate-300" rows={2}/> : ` ${teacher.qualifications.join(', ')}`}</div>
-                            <div><strong>Emergency Contact:</strong> {teacher.emergencyContact.name} ({teacher.emergencyContact.phone})</div>
-                        </div>
-                        <div className="border-t pt-4 mt-4">
-                            <div className="flex justify-between items-center mb-2">
-                                <h3 className="font-bold text-lg text-slate-800">Roles & Responsibilities</h3>
-                                <div className="space-x-2 no-print">
-                                    <button onClick={onOpenAssignModal} className="bg-sky-500 text-white px-3 py-1 rounded-md text-sm hover:bg-sky-600">Assign Teaching Role</button>
-                                    <button onClick={onOpenSchoolRoleModal} className="bg-teal-500 text-white px-3 py-1 rounded-md text-sm hover:bg-teal-600">Assign School Role</button>
                                 </div>
-                            </div>
-                            <div className="p-3 bg-slate-50 rounded-lg border">
-                                <p><strong>Teaching Role:</strong> <span className="font-medium text-sky-700">{teacher.assignedClass ? ` Class Teacher for ${teacher.assignedClass}` : teacher.assignedSubjects?.length ? ` Subject Teacher for ${teacher.assignedSubjects?.join(', ')}` : 'Not Assigned'}</span></p>
-                                <p><strong>School Roles:</strong> <span className="font-medium text-teal-700">{teacher.schoolRoles?.join(', ') || 'N/A'}</span></p>
-                            </div>
-                        </div>
-                        <div className="border-t pt-4 mt-4">
-                            <div className="flex justify-between items-center mb-2">
-                                <h3 className="font-bold text-lg text-slate-800">Uploaded Documents</h3>
-                                <button onClick={onOpenUploadModal} className="bg-slate-200 text-slate-700 px-3 py-1 rounded-md text-sm hover:bg-slate-300 no-print">Upload Document</button>
-                            </div>
-                            <ul className="space-y-2">{teacher.documents.map(doc => (<li key={doc.name} className="flex justify-between items-center p-2 bg-slate-50 rounded border"><span>{doc.name} (Uploaded: {doc.date})</span><a href={doc.url} className="text-sky-600 hover:underline text-sm">View</a></li>))}</ul>
-                        </div>
+                            )}
+                         </div>}
+                         {activeTab === 'documents' && <div className="animate-fade-in">
+                             <h3 className="font-bold text-lg text-slate-800 mb-4">Staff Documents</h3>
+                             <form onSubmit={handleAddDocument} className="mb-6 p-4 bg-slate-50 border rounded-lg flex items-end space-x-4">
+                                <div className="flex-grow">
+                                    <label className="block text-sm font-medium text-slate-700">Document Name</label>
+                                    <input type="text" value={docName} onChange={e => setDocName(e.target.value)} className="mt-1 w-full p-2 border border-slate-300 rounded-lg"/>
+                                </div>
+                                 <div className="flex-grow">
+                                    <label className="block text-sm font-medium text-slate-700">File</label>
+                                    <input type="file" ref={docFileRef} className="mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                                </div>
+                                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Upload</button>
+                             </form>
+                             <div className="space-y-2">
+                                {editableStaff.documents && editableStaff.documents.length > 0 ? (
+                                    editableStaff.documents.map((doc, i) => (
+                                        <div key={i} className="flex justify-between items-center p-2 bg-white border rounded">
+                                            <span>{doc.name}</span>
+                                            <span className="text-sm text-slate-500">{doc.date}</span>
+                                        </div>
+                                    ))
+                                ) : <p className="text-slate-500">No documents uploaded.</p>}
+                             </div>
+                         </div>}
                     </div>
                 </div>
             </div>
             {isArchiveModalOpen && (
                 <ConfirmationModal
-                    title="Archive Teacher"
-                    message={<>Are you sure you want to archive <strong>{teacher.name}</strong>? Their profile will be hidden from the main list but can be viewed in the archives.</>}
+                    title="Archive Staff Member"
+                    message={<>Are you sure you want to archive <strong>{staff.name}</strong>? Their profile will be hidden from the main list but can be viewed in the archives.</>}
                     confirmText="Archive"
                     confirmClass="bg-yellow-500 hover:bg-yellow-600"
-                    onConfirm={() => { onArchive(teacher.id); setArchiveModalOpen(false); }}
+                    onConfirm={() => { onArchive(staff.id); setArchiveModalOpen(false); }}
                     onClose={() => setArchiveModalOpen(false)}
+                />
+            )}
+            {isChangePasswordModalOpen && userAccount && (
+                <AdminChangePasswordModal
+                    userToUpdate={{ id: userAccount.id, name: staff.name, role: userAccount.role }}
+                    onClose={() => setChangePasswordModalOpen(false)}
+                    onSave={(userId, newPassword) => {
+                        onAdminPasswordChange(userId, newPassword);
+                        setChangePasswordModalOpen(false);
+                    }}
                 />
             )}
         </>
     );
 };
 
-export const Teachers: React.FC<{ user: User }> = ({ user }) => {
-    const [teachers, setTeachers] = useState<Teacher[]>(mockTeachers);
-    const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
-    const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
-    const [isSchoolRoleModalOpen, setIsSchoolRoleModalOpen] = useState(false);
-    const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+const AddStaffModal: React.FC<{
+    onClose: () => void,
+    onAddStaff: (staff: Omit<Staff, 'id' | 'staffNumber'>, user: Omit<User, 'id'>, password: string) => void;
+    allStaff: Staff[];
+}> = ({ onClose, onAddStaff, allStaff }) => {
+    const [newStaff, setNewStaff] = useState<Partial<Staff>>({
+        category: StaffCategory.Teaching,
+        employmentType: 'Full-time',
+        employmentYear: new Date().getFullYear(),
+    });
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setNewStaff(prev => ({...prev, [name]: value}));
+    }
+
+    const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              setNewStaff(prev => ({...prev, photoUrl: reader.result as string}));
+          };
+          reader.readAsDataURL(file);
+      }
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const { name, email, category } = newStaff;
+        if (!name || !email || !category) {
+            alert("Name, Email, and Category are required.");
+            return;
+        }
+
+        // Generate username (e.g., j.doe)
+        const nameParts = name.toLowerCase().split(' ');
+        const username = nameParts.length > 1 
+            ? `${nameParts[0][0]}.${nameParts[nameParts.length - 1]}` 
+            : nameParts[0];
+
+        // Default password for new staff: Password@123
+        const password = 'Password@123';
+
+        const user: Omit<User, 'id'> = {
+            username,
+            name: name,
+            role: category === StaffCategory.Teaching ? Role.Teacher : Role.Admin, // Simplified role assignment
+        };
+
+        const finalStaff = {
+            ...newStaff,
+            photoUrl: newStaff.photoUrl || DEFAULT_AVATAR_URL,
+            documents: [],
+            status: 'active',
+        } as Omit<Staff, 'id' | 'staffNumber'>;
+
+        onAddStaff(finalStaff, user, password);
+        onClose();
+    }
+
+    return (
+        <Modal title="Add New Staff Member">
+            <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                <div className="flex flex-col items-center gap-2 p-4 bg-slate-50 rounded-lg">
+                    <img src={newStaff.photoUrl || DEFAULT_AVATAR_URL} alt="Staff" className="w-24 h-24 rounded-full object-cover bg-slate-200" />
+                    <input type="file" accept="image/*" ref={fileInputRef} onChange={handlePhotoUpload} className="hidden" />
+                    <button type="button" onClick={() => fileInputRef.current?.click()} className="text-sm bg-slate-200 text-slate-700 px-3 py-1 rounded-md">Upload Photo</button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input name="name" onChange={handleChange} placeholder="Full Name*" required className="p-2 border rounded"/>
+                    <input name="email" type="email" onChange={handleChange} placeholder="Email Address*" required className="p-2 border rounded"/>
+                    <select name="category" value={newStaff.category} onChange={handleChange} className="p-2 border rounded">
+                        {Object.values(StaffCategory).map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                     <select name="employmentType" value={newStaff.employmentType} onChange={handleChange} className="p-2 border rounded">
+                        <option value="Full-time">Full-time</option>
+                        <option value="Part-time">Part-time</option>
+                        <option value="Volunteer">Volunteer</option>
+                    </select>
+                    <input name="contact" onChange={handleChange} placeholder="Contact Number" className="p-2 border rounded"/>
+                    <input name="employmentYear" type="number" value={newStaff.employmentYear} onChange={handleChange} placeholder="Employment Year" className="p-2 border rounded"/>
+                    <textarea name="qualifications" onChange={handleChange} placeholder="Qualifications (comma-separated)" className="md:col-span-2 p-2 border rounded" />
+                </div>
+                <div className="flex justify-end space-x-4 pt-4">
+                    <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg">Cancel</button>
+                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg">Add Staff</button>
+                </div>
+            </form>
+        </Modal>
+    )
+}
+
+const Modal: React.FC<{ children: React.ReactNode; title: string; }> = ({ children, title }) => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4">
+        <style>{keyframes}</style>
+        <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-2xl" style={animationStyle}>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">{title}</h2>
+            {children}
+        </div>
+    </div>
+);
+
+export const StaffPage: React.FC<{ 
+    user: User, 
+    staff: Staff[], 
+    users: User[],
+    settings: Settings,
+    onUpdateStaff: (staff: Staff) => void, 
+    onAddStaffAndUser: any,
+    onAdminPasswordChange: (userId: string, newPassword: string) => void;
+}> = ({ user, staff, users, settings, onUpdateStaff, onAddStaffAndUser, onAdminPasswordChange }) => {
+    const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
     const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
+    const [activeCategory, setActiveCategory] = useState<StaffCategory>(StaffCategory.Teaching);
+    const [isAddModalOpen, setAddModalOpen] = useState(false);
 
-    const handleUpdateTeacher = (updatedTeacher: Teacher) => {
-        const updatedTeachers = teachers.map(t => t.id === updatedTeacher.id ? updatedTeacher : t);
-        setTeachers(updatedTeachers);
-        setSelectedTeacher(updatedTeacher);
-    };
-
-    const handleArchiveTeacher = (teacherId: string) => {
-        setTeachers(prev => prev.map(t => t.id === teacherId ? {...t, status: 'archived'} : t));
-        setSelectedTeacher(null);
-    };
-
-    const handleSaveAssignment = (updatedTeacher: Teacher) => {
-        handleUpdateTeacher(updatedTeacher);
-        setIsAssignModalOpen(false);
-    };
-
-    const handleSaveSchoolRoles = (roles: string[]) => {
-        if (selectedTeacher) {
-            handleUpdateTeacher({ ...selectedTeacher, schoolRoles: roles });
+    const handleArchiveStaff = (staffId: string) => {
+        const staffToUpdate = staff.find(s => s.id === staffId);
+        if (staffToUpdate) {
+            onUpdateStaff({ ...staffToUpdate, status: 'archived' });
         }
-        setIsSchoolRoleModalOpen(false);
-    };
-
-    const handleSaveDocument = (doc: { name: string; url: string; date: string }) => {
-        if (selectedTeacher) {
-            handleUpdateTeacher({ ...selectedTeacher, documents: [...selectedTeacher.documents, doc] });
-        }
-        setIsUploadModalOpen(false);
+        setSelectedStaff(null);
     };
     
-    const teachersToShow = teachers.filter(t => t.status === viewMode);
+    const filteredStaff = useMemo(() => {
+        return staff.filter(s => s.status === viewMode && s.category === activeCategory);
+    }, [staff, viewMode, activeCategory]);
 
-    if (selectedTeacher) {
+    if (selectedStaff) {
         return (
             <div className="p-4 sm:p-6 lg:p-8">
-                <TeacherDetails user={user} teacher={selectedTeacher} onBack={() => setSelectedTeacher(null)} onUpdate={handleUpdateTeacher} onArchive={handleArchiveTeacher} onOpenAssignModal={() => setIsAssignModalOpen(true)} onOpenSchoolRoleModal={() => setIsSchoolRoleModalOpen(true)} onOpenUploadModal={() => setIsUploadModalOpen(true)} />
-                {isAssignModalOpen && <AssignRoleModal teacher={selectedTeacher} onClose={() => setIsAssignModalOpen(false)} onSave={handleSaveAssignment} />}
-                {isSchoolRoleModalOpen && <AssignSchoolRoleModal teacher={selectedTeacher} onClose={() => setIsSchoolRoleModalOpen(false)} onSave={handleSaveSchoolRoles} />}
-                {isUploadModalOpen && <UploadDocumentModal onClose={() => setIsUploadModalOpen(false)} onSave={handleSaveDocument} />}
+                <StaffDetails 
+                    user={user} 
+                    staff={selectedStaff} 
+                    users={users}
+                    settings={settings}
+                    onBack={() => setSelectedStaff(null)} 
+                    onUpdate={onUpdateStaff} 
+                    onArchive={handleArchiveStaff} 
+                    onAdminPasswordChange={onAdminPasswordChange} 
+                />
             </div>
         );
     }
 
     return (
         <div className="p-4 sm:p-6 lg:p-8">
-            <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
-                <h1 className="text-3xl font-bold text-slate-800">Teacher Management</h1>
+            <div className="flex justify-between items-center mb-2 flex-wrap gap-4">
+                <h1 className="text-3xl font-bold text-slate-800">Staff Management</h1>
                 <div className="flex items-center space-x-4">
                     <div className="flex items-center space-x-2 rounded-lg bg-slate-200 p-1">
                         <button onClick={() => setViewMode('active')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${viewMode === 'active' ? 'bg-white shadow text-slate-800' : 'text-slate-600 hover:bg-slate-300'}`}>Active</button>
                         <button onClick={() => setViewMode('archived')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${viewMode === 'archived' ? 'bg-white shadow text-slate-800' : 'text-slate-600 hover:bg-slate-300'}`}>Archived</button>
                     </div>
-                    <button className="bg-sky-600 text-white px-4 py-2 rounded-lg hover:bg-sky-700 transition-colors">Add New Teacher</button>
+                    <button onClick={() => setAddModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">Add New Staff</button>
                 </div>
             </div>
+
+            <div className="border-b border-slate-200 mb-6">
+                <nav className="flex space-x-2 sm:space-x-4 overflow-x-auto">
+                    {Object.values(StaffCategory).map(category => (
+                        <button key={category} onClick={() => setActiveCategory(category)} className={`py-2 px-2 sm:px-1 font-medium whitespace-nowrap ${activeCategory === category ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>{category}</button>
+                    ))}
+                </nav>
+            </div>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {teachersToShow.map(teacher => (
-                    <TeacherCard key={teacher.id} teacher={teacher} onSelect={setSelectedTeacher} />
+                {filteredStaff.map(s => (
+                    <StaffCard key={s.id} staff={s} onSelect={setSelectedStaff} />
                 ))}
             </div>
-            {teachersToShow.length === 0 && <p className="text-center text-slate-500 mt-8">No {viewMode} teachers found.</p>}
+            {filteredStaff.length === 0 && <p className="text-center text-slate-500 mt-8">No {viewMode} staff found in this category.</p>}
+            {isAddModalOpen && <AddStaffModal onClose={() => setAddModalOpen(false)} onAddStaff={onAddStaffAndUser} allStaff={staff} />}
         </div>
     );
 };

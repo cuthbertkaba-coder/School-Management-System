@@ -1,16 +1,15 @@
 import React, { useState } from 'react';
 import { SCHOOL_LOGO_URL, SCHOOL_NAME, SCHOOL_MOTTO } from '../constants';
 import { Role, User, Student, LoggedInUser } from '../types';
-import { hashPassword } from '../utils/auth';
 import { ForgotPasswordModal } from './Settings';
 
 interface LoginProps {
   onLogin: (user: LoggedInUser) => void;
-  users: { [username: string]: User & { passwordHash: string } };
   students: Student[];
+  users: (User & { password?: string })[];
 }
 
-export const Login: React.FC<LoginProps> = ({ onLogin, users, students }) => {
+export const Login: React.FC<LoginProps> = ({ onLogin, students, users }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -22,35 +21,44 @@ export const Login: React.FC<LoginProps> = ({ onLogin, users, students }) => {
     setError('');
     setIsLoading(true);
 
-    if (!username || !password) {
+    const trimmedUsername = username.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedUsername || !trimmedPassword) {
       setError('Please enter a username and password.');
       setIsLoading(false);
       return;
     }
     
     await new Promise(resolve => setTimeout(resolve, 300));
-
-    const enteredPasswordHash = await hashPassword(password);
     
-    // Check for staff user first
-    const userAccount = users[username.toLowerCase()];
+    // Attempt to find a staff user first.
+    const userAccount = users.find(u => u.username.toLowerCase() === trimmedUsername.toLowerCase());
+
     if (userAccount) {
-      if (enteredPasswordHash === userAccount.passwordHash) {
-        const { passwordHash, ...userToLogin } = userAccount;
-        onLogin(userToLogin);
+      if (trimmedPassword === userAccount.password) {
+        // Correct password for staff user
+        const { password, ...userToLogin } = userAccount;
+        onLogin(userToLogin as User);
+        return;
+      } else {
+        // Incorrect password for staff user. Fail immediately.
+        setError('Invalid username or password.');
+        setIsLoading(false);
         return;
       }
     }
 
-    // If not a staff user, check for parent (student ID) login
-    const studentAccount = students.find(s => s.id.toLowerCase() === username.toLowerCase());
-    if (studentAccount && studentAccount.parentPasswordHash) {
-      if (enteredPasswordHash === studentAccount.parentPasswordHash) {
+    // If no staff user was found, now check for a parent (student) login.
+    const studentAccount = students.find(s => s.id.toLowerCase() === trimmedUsername.toLowerCase());
+    if (studentAccount && studentAccount.parentPassword) {
+      if (trimmedPassword === studentAccount.parentPassword) {
           onLogin({ ...studentAccount, role: Role.Parent });
           return;
       }
     }
 
+    // If we reach this point, no user was found with the given credentials.
     setError('Invalid username or password.');
     setIsLoading(false);
   };
@@ -68,7 +76,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, users, students }) => {
             placeholder="Username / Student ID"
             value={username}
             onChange={(e) => { setUsername(e.target.value); setError(''); }}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             autoCapitalize="none"
           />
           <input
@@ -76,14 +84,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin, users, students }) => {
             placeholder="Password"
             value={password}
             onChange={(e) => { setPassword(e.target.value); setError(''); }}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           {error && <p className="text-red-500 text-sm text-left pt-1">{error}</p>}
           <div className="pt-2">
             <button 
               type="submit" 
               disabled={isLoading}
-              className="w-full bg-sky-600 text-white py-2.5 rounded-lg hover:bg-sky-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-sky-500 disabled:bg-slate-400 disabled:cursor-wait"
+              className="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-slate-400 disabled:cursor-wait"
             >
               {isLoading ? 'Signing In...' : 'Login'}
             </button>
@@ -93,7 +101,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, users, students }) => {
           <a
             href="#"
             onClick={(e) => { e.preventDefault(); setForgotPasswordOpen(true); }}
-            className="text-sm text-sky-600 hover:underline"
+            className="text-sm text-blue-600 hover:underline"
           >
             Forgot Password?
           </a>

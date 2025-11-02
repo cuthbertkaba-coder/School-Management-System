@@ -1,9 +1,9 @@
-
-
 import React, { useState, useMemo, useRef } from 'react';
 import { Student } from '../types';
 import { mockStudents } from '../data/mockData';
 import { CLASSES, SCHOOL_LOGO_URL, SCHOOL_NAME } from '../constants';
+import { calculateFinancials } from '../utils/auth';
+
 
 declare global {
     interface Window {
@@ -67,19 +67,19 @@ const AddPaymentModal: React.FC<{
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-slate-700" htmlFor="payment-date">Date</label>
-                        <input id="payment-date" type="date" value={date} onChange={e => setDate(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                        <input id="payment-date" type="date" value={date} onChange={e => setDate(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700" htmlFor="payment-amount">Amount (GHS)</label>
-                        <input id="payment-amount" type="number" placeholder="0.00" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                        <input id="payment-amount" type="number" placeholder="0.00" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700" htmlFor="receipt-number">Receipt Number</label>
-                        <input id="receipt-number" type="text" value={receipt} onChange={e => setReceipt(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                        <input id="receipt-number" type="text" value={receipt} onChange={e => setReceipt(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                     <div className="flex justify-end space-x-4 pt-4">
                         <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 transition-colors">Cancel</button>
-                        <button type="submit" className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors">Save Payment</button>
+                        <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Save Payment</button>
                     </div>
                 </form>
             </div>
@@ -87,8 +87,10 @@ const AddPaymentModal: React.FC<{
     );
 };
 
-const StatementModal: React.FC<{ student: Student; onClose: () => void }> = ({ student, onClose }) => {
+const StatementModal: React.FC<{ student: Student; onClose: () => void; academicYear: string; currentTerm: string; }> = ({ student, onClose, academicYear, currentTerm }) => {
     const statementRef = useRef<HTMLDivElement>(null);
+    const summary = calculateFinancials(student.financials);
+
     const handlePrint = () => {
         if (!statementRef.current) return;
         const printContents = statementRef.current.innerHTML;
@@ -112,33 +114,47 @@ const StatementModal: React.FC<{ student: Student; onClose: () => void }> = ({ s
                         <p><strong>Student:</strong> {student.name}</p>
                         <p><strong>Student ID:</strong> {student.id}</p>
                         <p><strong>Class:</strong> {student.currentClass}</p>
+                        <p><strong>Academic Year:</strong> {academicYear}</p>
+                        <p><strong>Term:</strong> {currentTerm}</p>
                         <p><strong>Date Issued:</strong> {new Date().toLocaleDateString()}</p>
                     </div>
-                    <h3 className="font-bold text-lg text-slate-800 mb-2">Payment History</h3>
-                    <table className="w-full text-sm text-left mb-4">
-                        <thead className="bg-slate-50">
-                            <tr>
-                                <th className="p-2 border">Date</th>
-                                <th className="p-2 border">Receipt No.</th>
-                                <th className="p-2 border text-right">Amount Paid (GHS)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {student.financials.payments.map((p, i) => (
-                                <tr key={i}><td className="p-2 border">{p.date}</td><td className="p-2 border">{p.receipt}</td><td className="p-2 border text-right">{p.amount.toFixed(2)}</td></tr>
-                            ))}
-                        </tbody>
-                    </table>
-                    <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg">
-                        <div className="text-right font-semibold">Total Fees:</div><div className="font-bold text-blue-600">GHS {student.financials.totalFees.toFixed(2)}</div>
-                        <div className="text-right font-semibold">Total Paid:</div><div className="font-bold text-green-600">GHS {student.financials.paid.toFixed(2)}</div>
-                        <div className="text-right font-bold text-lg border-t pt-2 mt-2">Balance Due:</div><div className="font-extrabold text-red-600 text-lg border-t pt-2 mt-2">GHS {student.financials.balance.toFixed(2)}</div>
+                    
+                    <div className="space-y-4">
+                        <div>
+                            <h3 className="font-bold text-lg text-slate-800 mb-2">Fee Items</h3>
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50"><tr><th className="p-2 border">Date</th><th className="p-2 border">Description</th><th className="p-2 border text-right">Amount (GHS)</th></tr></thead>
+                                <tbody>{student.financials.feeItems.map((item, i) => (<tr key={`fee-${i}`}><td className="p-2 border">{item.date}</td><td className="p-2 border">{item.category}</td><td className="p-2 border text-right">{item.amount.toFixed(2)}</td></tr>))}</tbody>
+                            </table>
+                        </div>
+                        {student.financials.discounts.length > 0 && <div>
+                            <h3 className="font-bold text-lg text-slate-800 mb-2">Discounts</h3>
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50"><tr><th className="p-2 border">Type</th><th className="p-2 border">Description</th><th className="p-2 border text-right">Amount (GHS)</th></tr></thead>
+                                <tbody>{student.financials.discounts.map((d, i) => (<tr key={`disc-${i}`}><td className="p-2 border">{d.type}</td><td className="p-2 border">{d.description || 'N/A'}</td><td className="p-2 border text-right text-green-600">-{d.amount.toFixed(2)}</td></tr>))}</tbody>
+                            </table>
+                        </div>}
+                        <div>
+                             <h3 className="font-bold text-lg text-slate-800 mb-2">Payment History</h3>
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50"><tr><th className="p-2 border">Date</th><th className="p-2 border">Receipt No.</th><th className="p-2 border text-right">Amount Paid (GHS)</th></tr></thead>
+                                <tbody>{student.financials.payments.map((p, i) => (<tr key={`pay-${i}`}><td className="p-2 border">{p.date}</td><td className="p-2 border">{p.receipt}</td><td className="p-2 border text-right">{p.amount.toFixed(2)}</td></tr>))}</tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-x-4 bg-slate-100 p-4 rounded-lg mt-6">
+                        <div className="text-right font-semibold">Total Bill:</div><div className="font-bold">GHS {summary.totalFees.toFixed(2)}</div>
+                        <div className="text-right font-semibold">Total Discounts:</div><div className="font-bold text-green-600">- GHS {summary.totalDiscounts.toFixed(2)}</div>
+                         <div className="text-right font-semibold border-t pt-2 mt-2">Net Bill:</div><div className="font-bold border-t pt-2 mt-2">GHS {(summary.totalFees - summary.totalDiscounts).toFixed(2)}</div>
+                        <div className="text-right font-semibold">Total Paid:</div><div className="font-bold">GHS {summary.paid.toFixed(2)}</div>
+                        <div className="text-right font-bold text-lg border-t pt-2 mt-2">Balance Due:</div><div className={`font-extrabold text-lg border-t pt-2 mt-2 ${summary.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>GHS {summary.balance.toFixed(2)}</div>
                     </div>
                 </div>
-                <div className="flex justify-end space-x-4 p-4 bg-slate-100 border-t rounded-b-lg no-print">
+                <div className="flex justify-end space-x-4 p-4 bg-slate-50 border-t rounded-b-lg no-print">
                     <button onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300">Close</button>
                     <button onClick={() => exportToPdf(statementRef.current!, `Statement_${student.id}`)} className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">Export PDF</button>
-                    <button onClick={handlePrint} className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700">Print Statement</button>
+                    <button onClick={handlePrint} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Print Statement</button>
                 </div>
             </div>
         </div>
@@ -146,8 +162,7 @@ const StatementModal: React.FC<{ student: Student; onClose: () => void }> = ({ s
 };
 
 
-export const Financials: React.FC = () => {
-    const [students, setStudents] = useState<Student[]>(mockStudents);
+export const Financials: React.FC<{ students: Student[], onUpdateStudent: (student: Student) => void, academicYear: string, currentTerm: string }> = ({ students, onUpdateStudent, academicYear, currentTerm }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedClass, setSelectedClass] = useState('All');
     const [studentForPayment, setStudentForPayment] = useState<Student | null>(null);
@@ -156,22 +171,17 @@ export const Financials: React.FC = () => {
 
 
     const handleSavePayment = (studentId: string, payment: { date: string; amount: number; receipt: string; }) => {
-        setStudents(prev => prev.map(s => {
-            if (s.id === studentId) {
-                const newPaid = s.financials.paid + payment.amount;
-                const newBalance = s.financials.totalFees - newPaid;
-                return {
-                    ...s,
-                    financials: {
-                        ...s.financials,
-                        paid: newPaid,
-                        balance: newBalance,
-                        payments: [...s.financials.payments, payment]
-                    }
-                };
-            }
-            return s;
-        }));
+        const student = students.find(s => s.id === studentId);
+        if (student) {
+            const updatedStudent = {
+                ...student,
+                financials: {
+                    ...student.financials,
+                    payments: [...student.financials.payments, payment]
+                }
+            };
+            onUpdateStudent(updatedStudent);
+        }
         setStudentForPayment(null);
     };
 
@@ -185,9 +195,10 @@ export const Financials: React.FC = () => {
     
     const totals = useMemo(() => {
         return filteredStudents.reduce((acc, s) => {
-            acc.totalFees += s.financials.totalFees;
-            acc.paid += s.financials.paid;
-            acc.balance += s.financials.balance;
+            const summary = calculateFinancials(s.financials);
+            acc.totalFees += summary.totalFees;
+            acc.paid += summary.paid;
+            acc.balance += summary.balance;
             return acc;
         }, { totalFees: 0, paid: 0, balance: 0 });
     }, [filteredStudents]);
@@ -208,12 +219,12 @@ export const Financials: React.FC = () => {
                     placeholder="Search by name or ID..."
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
-                    className="flex-grow p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    className="flex-grow p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <select 
                     value={selectedClass} 
                     onChange={e => setSelectedClass(e.target.value)}
-                    className="p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    className="p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                     <option value="All">All Classes</option>
                     {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -221,7 +232,7 @@ export const Financials: React.FC = () => {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-white p-4 rounded-lg shadow text-center"><p className="text-sm text-slate-500">Total Fees Due</p><p className="font-bold text-2xl text-blue-600">GHS {totals.totalFees.toFixed(2)}</p></div>
+                <div className="bg-white p-4 rounded-lg shadow text-center"><p className="text-sm text-slate-500">Total Billed</p><p className="font-bold text-2xl text-blue-600">GHS {totals.totalFees.toFixed(2)}</p></div>
                 <div className="bg-white p-4 rounded-lg shadow text-center"><p className="text-sm text-slate-500">Total Paid</p><p className="font-bold text-2xl text-green-600">GHS {totals.paid.toFixed(2)}</p></div>
                 <div className="bg-white p-4 rounded-lg shadow text-center"><p className="text-sm text-slate-500">Total Outstanding</p><p className="font-bold text-2xl text-red-600">GHS {totals.balance.toFixed(2)}</p></div>
             </div>
@@ -232,26 +243,29 @@ export const Financials: React.FC = () => {
                         <tr>
                             <th scope="col" className="px-6 py-3">Student Name</th>
                             <th scope="col" className="px-6 py-3">Class</th>
-                            <th scope="col" className="px-6 py-3">Total Fees (GHS)</th>
+                            <th scope="col" className="px-6 py-3">Total Bill (GHS)</th>
                             <th scope="col" className="px-6 py-3">Amount Paid (GHS)</th>
                             <th scope="col" className="px-6 py-3">Balance (GHS)</th>
                             <th scope="col" className="px-6 py-3 no-print">Action</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredStudents.map(student => (
-                            <tr key={student.id} className="bg-white border-b hover:bg-slate-50">
-                                <td className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">{student.name}</td>
-                                <td className="px-6 py-4">{student.currentClass}</td>
-                                <td className="px-6 py-4">{student.financials.totalFees.toFixed(2)}</td>
-                                <td className="px-6 py-4 text-green-600 font-semibold">{student.financials.paid.toFixed(2)}</td>
-                                <td className={`px-6 py-4 font-semibold ${student.financials.balance > 0 ? 'text-red-600' : 'text-slate-500'}`}>{student.financials.balance.toFixed(2)}</td>
-                                <td className="px-6 py-4 space-x-2 whitespace-nowrap no-print">
-                                    <button onClick={() => setStudentForPayment(student)} className="text-sky-600 hover:underline font-medium">Add Payment</button>
-                                    <button onClick={() => setStudentForStatement(student)} className="text-slate-500 hover:underline font-medium">View Statement</button>
-                                </td>
-                            </tr>
-                        ))}
+                        {filteredStudents.map(student => {
+                            const summary = calculateFinancials(student.financials);
+                            return (
+                                <tr key={student.id} className="bg-white border-b hover:bg-slate-50">
+                                    <td className="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">{student.name}</td>
+                                    <td className="px-6 py-4">{student.currentClass}</td>
+                                    <td className="px-6 py-4">{summary.totalFees.toFixed(2)}</td>
+                                    <td className="px-6 py-4 text-green-600 font-semibold">{summary.paid.toFixed(2)}</td>
+                                    <td className={`px-6 py-4 font-semibold ${summary.balance > 0 ? 'text-red-600' : 'text-slate-500'}`}>{summary.balance.toFixed(2)}</td>
+                                    <td className="px-6 py-4 space-x-2 whitespace-nowrap no-print">
+                                        <button onClick={() => setStudentForPayment(student)} className="text-blue-600 hover:underline font-medium">Add Payment</button>
+                                        <button onClick={() => setStudentForStatement(student)} className="text-slate-500 hover:underline font-medium">View Statement</button>
+                                    </td>
+                                </tr>
+                            )
+                        })}
                     </tbody>
                 </table>
             </div>
@@ -267,6 +281,8 @@ export const Financials: React.FC = () => {
                 <StatementModal
                     student={studentForStatement}
                     onClose={() => setStudentForStatement(null)}
+                    academicYear={academicYear}
+                    currentTerm={currentTerm}
                 />
              )}
         </div>

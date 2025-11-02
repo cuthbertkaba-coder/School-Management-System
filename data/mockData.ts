@@ -1,13 +1,51 @@
-import { Student, Teacher, Notification, StudentNote, User, Role } from '../types';
-import { CLASSES } from '../constants';
+import { Student, Staff, Notification, User, Role, StaffCategory, Settings, FeeItem, Discount, PasswordChangeRequest } from '../types';
+import { CLASSES, SUBJECTS, SUBJECTS_JUNIOR } from '../constants';
+
+const allSubjects = [...new Set([...SUBJECTS, ...SUBJECTS_JUNIOR])];
+
+export const mockSettings: Settings = {
+  academicYear: '2024/2025 Academic Year',
+  currentTerm: 'First Term',
+  feeStructure: {
+    "Creche": { "Tuition": 300, "Snack and Lunch": 100 },
+    "Nursery 1": { "Tuition": 350, "Snack and Lunch": 120, "Stationery & Toiletries": 50 },
+    "Nursery 2": { "Tuition": 350, "Snack and Lunch": 120, "Stationery & Toiletries": 50 },
+    "Kindergarten 1": { "Tuition": 400, "Snack and Lunch": 150, "Stationery & Toiletries": 60 },
+    "Kindergarten 2": { "Tuition": 400, "Snack and Lunch": 150, "Stationery & Toiletries": 60 },
+    "Basic 1": { "Tuition": 450, "Snack and Lunch": 180, "Stationery & Toiletries": 75 },
+    "Basic 2": { "Tuition": 450, "Snack and Lunch": 180, "Stationery & Toiletries": 75 },
+    "Basic 3": { "Tuition": 450, "Snack and Lunch": 180, "Stationery & Toiletries": 75 },
+    "Basic 4": { "Tuition": 500, "Snack and Lunch": 200, "Stationery & Toiletries": 80 },
+    "Basic 5": { "Tuition": 500, "Snack and Lunch": 200, "Stationery & Toiletries": 80 },
+    "Basic 6": { "Tuition": 500, "Snack and Lunch": 200, "Stationery & Toiletries": 80 },
+    "Basic 7": { "Tuition": 550, "Snack and Lunch": 220, "Stationery & Toiletries": 90 },
+    "Basic 8": { "Tuition": 550, "Snack and Lunch": 220, "Stationery & Toiletries": 90 },
+    "Basic 9": { "Tuition": 550, "Snack and Lunch": 220, "Stationery & Toiletries": 90 },
+  },
+  schoolSubjects: allSubjects,
+  classSubjects: {
+    ...Object.fromEntries(CLASSES.slice(0, 5).map(c => [c, SUBJECTS_JUNIOR.slice(0, 4)])), // Pre-school
+    ...Object.fromEntries(CLASSES.slice(5, 11).map(c => [c, SUBJECTS_JUNIOR])), // Primary
+    ...Object.fromEntries(CLASSES.slice(11).map(c => [c, SUBJECTS])), // JHS
+  }
+};
+
 
 const generateStudent = (id: number, studentClass: string): Student => {
     const firstName = ['John', 'Jane', 'Peter', 'Mary', 'David', 'Sarah', 'Michael', 'Emily', 'Chris', 'Jessica'][id % 10];
     const lastName = ['Smith', 'Johnson', 'Williams', 'Brown', 'Jones', 'Garcia', 'Miller', 'Davis', 'Rodriguez', 'Martinez'][id % 10];
     const gender = id % 2 === 0 ? 'Male' : 'Female';
-    const totalFees = 500 + Math.floor(Math.random() * 200);
-    const paid = Math.floor(Math.random() * totalFees);
     
+    const classFees = mockSettings.feeStructure[studentClass as keyof typeof mockSettings.feeStructure] || { "Tuition": 500 };
+    const feeItems: FeeItem[] = Object.entries(classFees).map(([category, amount]) => ({
+        category,
+        amount,
+        date: '2024-09-01',
+    }));
+
+    const totalFees = feeItems.reduce((sum, item) => sum + item.amount, 0);
+    const paid = Math.floor(Math.random() * (totalFees * 0.8));
+
     return {
         id: `CCS2024${id.toString().padStart(3, '0')}`,
         photoUrl: `https://picsum.photos/seed/${id}/200`,
@@ -17,17 +55,16 @@ const generateStudent = (id: number, studentClass: string): Student => {
         guardianName: `Guardian of ${firstName}`,
         guardianContact: `024-123-456${id % 10}`,
         guardianEmail: `guardian.of.${firstName.toLowerCase()}${id}@example.com`,
-        enrolmentDate: `2020-09-01`,
+        enrolmentDate: `2024-01-15`,
         currentClass: studentClass,
         classHistory: ['Creche', 'Nursery 1'],
         positionsHeld: id % 5 === 0 ? ['Class Prefect'] : [],
         interests: ['Football', 'Music'],
         awards: [],
         financials: {
-            totalFees,
-            paid,
-            balance: totalFees - paid,
-            payments: [{ date: '2024-01-15', amount: paid, receipt: 'RCPT001' }],
+            feeItems,
+            discounts: id === 1 ? [{ type: 'Sibling', amount: 50, description: '2nd child discount' }] : [],
+            payments: [{ date: '2024-09-15', amount: paid, receipt: `RCPT001-${id}` }],
         },
         attendance: [
             { date: '2024-07-15', status: 'Present' },
@@ -36,10 +73,10 @@ const generateStudent = (id: number, studentClass: string): Student => {
         ],
         grades: [
             {
-                term: 'First Term 2023',
+                term: 'First Term',
                 subjects: {
-                    'English': { ca: 25, exam: 60, total: 85 },
-                    'Math': { ca: 28, exam: 65, total: 93 },
+                    'English Language': { classAssignments: 18, project: 8, midterm: 18, endOfTerm: 42 },
+                    'Mathematics': { classAssignments: 19, project: 9, midterm: 19, endOfTerm: 46 },
                 },
                 average: 89,
                 position: 2,
@@ -48,9 +85,9 @@ const generateStudent = (id: number, studentClass: string): Student => {
         privateNotes: id === 0 ? [
             { date: '2024-07-21', author: 'Admin', content: 'Met with guardian to discuss recent performance. Guardian is supportive.' }
         ] : [],
+        documents: [],
         status: 'active',
-        // Default parent password is 'password'
-        parentPasswordHash: '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8',
+        parentPassword: 'parent',
     };
 };
 
@@ -59,28 +96,31 @@ export const mockStudents: Student[] = CLASSES.flatMap(c =>
 );
 
 
-export const mockTeachers: Teacher[] = [
+export const mockStaff: Staff[] = [
     {
-        id: 'T001',
+        id: 'S001',
         photoUrl: 'https://picsum.photos/seed/t1/200',
         name: 'Mr. Emmanuel Asante',
         staffNumber: 'CCS/T/001',
         employmentYear: 2015,
+        employmentType: 'Full-time',
         qualifications: ['B.Ed. Basic Education', 'M.Phil Educational Studies'],
         contact: '020-111-2222',
         email: 'e.asante@ccschool.edu.gh',
         emergencyContact: { name: 'Mrs. Asante', phone: '020-222-3333' },
         assignedClass: 'Basic 6',
-        schoolRoles: ['Sports Lead', 'Headteacher'],
+        schoolRoles: ['Sports Lead'],
         documents: [{ name: 'Appointment Letter', url: '#', date: '2015-08-01' }],
         status: 'active',
+        category: StaffCategory.Teaching,
     },
     {
-        id: 'T002',
+        id: 'S002',
         photoUrl: 'https://picsum.photos/seed/t2/200',
         name: 'Mrs. Grace Mensah',
         staffNumber: 'CCS/T/002',
         employmentYear: 2018,
+        employmentType: 'Full-time',
         qualifications: ['Diploma in Early Childhood'],
         contact: '055-444-5555',
         email: 'g.mensah@ccschool.edu.gh',
@@ -88,13 +128,15 @@ export const mockTeachers: Teacher[] = [
         assignedClass: 'Nursery 2',
         documents: [{ name: 'CV', url: '#', date: '2018-01-10' }],
         status: 'active',
+        category: StaffCategory.Teaching,
     },
     {
-        id: 'T003',
+        id: 'S003',
         photoUrl: 'https://picsum.photos/seed/t3/200',
         name: 'Mr. David Ofori',
         staffNumber: 'CCS/T/003',
         employmentYear: 2020,
+        employmentType: 'Part-time',
         qualifications: ['BSc. Mathematics'],
         contact: '027-777-8888',
         email: 'd.ofori@ccschool.edu.gh',
@@ -103,42 +145,90 @@ export const mockTeachers: Teacher[] = [
         schoolRoles: ['Teacher on Duty'],
         documents: [{ name: 'SSSCE Certificate', url: '#', date: '2020-07-21' }],
         status: 'active',
+        category: StaffCategory.Teaching,
+    },
+    {
+        id: 'S004',
+        photoUrl: 'https://picsum.photos/seed/a1/200',
+        name: 'Ms. Beatrice Clerk',
+        staffNumber: 'CCS/A/001',
+        employmentYear: 2017,
+        employmentType: 'Full-time',
+        qualifications: ['HND in Administration'],
+        contact: '023-111-2222',
+        email: 'b.clerk@ccschool.edu.gh',
+        emergencyContact: { name: 'Mr. Clerk', phone: '023-222-3333' },
+        schoolRoles: ['Front Desk Admin'],
+        documents: [{ name: 'Appointment Letter', url: '#', date: '2017-08-01' }],
+        status: 'active',
+        category: StaffCategory.Administration,
+    },
+     {
+        id: 'S005',
+        photoUrl: 'https://picsum.photos/seed/ht1/200',
+        name: 'Mrs. Evelyn Adu',
+        staffNumber: 'CCS/A/002',
+        employmentYear: 2010,
+        employmentType: 'Full-time',
+        qualifications: ['M.Ed Leadership'],
+        contact: '023-555-4444',
+        email: 'head@ccschool.edu.gh',
+        emergencyContact: { name: 'Mr. Adu', phone: '023-444-3333' },
+        schoolRoles: ['Headteacher'],
+        documents: [],
+        status: 'active',
+        category: StaffCategory.Administration,
+    },
+    {
+        id: 'S006',
+        photoUrl: 'https://picsum.photos/seed/m1/200',
+        name: 'Mr. Kofi Annan',
+        staffNumber: 'CCS/M/001',
+        employmentYear: 2019,
+        employmentType: 'Full-time',
+        qualifications: ['General Maintenance Cert.'],
+        contact: '026-999-0000',
+        email: 'k.annan@ccschool.edu.gh',
+        emergencyContact: { name: 'Mrs. Annan', phone: '026-000-1111' },
+        schoolRoles: ['Grounds Keeper'],
+        documents: [],
+        status: 'active',
+        category: StaffCategory.MaintenanceOperations,
     }
 ];
 
-// Note: Passwords are 'admin', 'teacher', 'head', 'smc' respectively.
-// Hashes generated using SHA-256 for demonstration.
-export const mockUsers: { [username: string]: User & { passwordHash: string } } = {
-    'admin': {
+export const mockUsers: (User & { password: string })[] = [
+    {
         id: 'U001',
         username: 'admin',
         name: 'Admin User',
         role: Role.Admin,
-        passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
+        password: 'admin',
     },
-    'teacher1': {
+    {
         id: 'U002',
-        username: 'teacher1',
+        username: 'e.asante',
         name: 'Emmanuel Asante',
         role: Role.Teacher,
-        // Password: 'teacher'
-        passwordHash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
+        staffId: 'S001',
+        password: 'e.asante',
     },
-    'headteacher': {
+    {
         id: 'U003',
         username: 'headteacher',
-        name: 'Head Teacher',
+        name: 'Evelyn Adu',
         role: Role.Headteacher,
-        passwordHash: '7a53c35b881308696b251a3a6eb365287b47b489e2be131557877297e6822a48',
+        staffId: 'S005',
+        password: 'headteacher',
     },
-    'smc_chair': {
+    {
         id: 'U004',
         username: 'smc_chair',
         name: 'SMC Chair',
         role: Role.SMCChair,
-        passwordHash: '836f33887259045a1651586751240c11f7dc0415a77b50875600c6f5d81b846e',
+        password: 'smc_chair',
     }
-};
+];
 
 
 export const mockNotifications: Notification[] = [
@@ -146,12 +236,16 @@ export const mockNotifications: Notification[] = [
         id: 1,
         user: 'admin',
         date: '2024-07-20',
-        content: 'Mid-term break begins on the 25th of July. School resumes on the 1st of August.'
+        content: 'Mid-term break begins on the 25th of July. School resumes on the 1st of August.',
+        priority: true,
     },
     {
         id: 2,
         user: 'headteacher',
         date: '2024-07-18',
-        content: 'All teachers are to submit their terminal report comments by Friday, 22nd July.'
+        content: 'All teachers are to submit their terminal report comments by Friday, 22nd July.',
+        priority: false,
     },
 ];
+
+export const mockPasswordRequests: PasswordChangeRequest[] = [];

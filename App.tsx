@@ -1,23 +1,26 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { Page, User, Role, Student, Notification, ParentUser, LoggedInUser } from './types';
+// Fix: Import `Notification` type to resolve type errors.
+import { Page, User, Role, Student, Staff, LoggedInUser, Settings, PasswordChangeRequest, StaffCategory, Notification } from './types';
 import { SCHOOL_LOGO_URL, SCHOOL_NAME, SCHOOL_MOTTO, NAV_ITEMS, ICONS } from './constants';
-import { mockUsers, mockStudents, mockNotifications } from './data/mockData';
+// Fix: Import `mockNotifications` to resolve "Cannot find name" error.
+import { mockUsers, mockStudents, mockStaff, mockSettings, mockNotifications, mockPasswordRequests } from './data/mockData';
 import { Login } from './components/Login';
 import { Dashboard } from './components/Dashboard';
-import { Students } from './components/Students';
-import { Teachers } from './components/Teachers';
+import { Students as StudentsPage } from './components/Students';
+import { StaffPage } from './components/Teachers';
 import { ClassManagement } from './components/ClassManagement';
 import { Financials } from './components/Financials';
 import { Notifications as NotificationsComponent, ComingSoon } from './components/Utility';
-import { ChangePasswordModal } from './components/Settings';
+import { ChangePasswordModal, SchoolSettings } from './components/Settings';
+import { calculateFinancials } from './utils/auth';
+
 
 const Sidebar: React.FC<{ user: LoggedInUser, currentPage: string, setCurrentPage: (page: string) => void, onLogout: () => void }> = ({ user, currentPage, setCurrentPage, onLogout }) => {
     const visibleNavItems = useMemo(() => {
         if (user.role === Role.Parent) {
             return [
-                { label: 'Academics', icon: ICONS.Examinations },
-                { label: 'Attendance', icon: ICONS.ClassRecords },
-                { label: 'Financials', icon: ICONS.Financials },
+                { label: 'Academics', icon: ICONS.ExaminationsGrades },
+                { label: 'Financials', icon: ICONS.FeesFinancials },
                 { label: 'Notifications', icon: ICONS.Notifications },
             ];
         }
@@ -37,7 +40,7 @@ const Sidebar: React.FC<{ user: LoggedInUser, currentPage: string, setCurrentPag
                         key={item.label}
                         href="#"
                         onClick={(e) => { e.preventDefault(); setCurrentPage(item.label); }}
-                        className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium group transition-colors duration-200 ${currentPage === item.label ? 'bg-sky-100 text-sky-700' : 'text-slate-600 hover:bg-slate-100'}`}
+                        className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium group transition-colors duration-200 ${currentPage === item.label ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:bg-slate-100'}`}
                     >
                         {item.icon}
                         {item.label}
@@ -94,8 +97,9 @@ const Header: React.FC<{ user: LoggedInUser, toggleSidebar: () => void, onChange
     );
 };
 
-const ParentPortal: React.FC<{ student: ParentUser, page: string }> = ({ student, page }) => {
+const ParentPortal: React.FC<{ student: Student, page: string, notifications: Notification[] }> = ({ student, page, notifications }) => {
     const renderContent = () => {
+        const summary = calculateFinancials(student.financials);
         switch (page) {
             case 'Academics':
                 return (
@@ -108,24 +112,14 @@ const ParentPortal: React.FC<{ student: ParentUser, page: string }> = ({ student
                                 <table className="w-full text-sm text-left mt-2">
                                     <thead className="bg-slate-50"><tr><th className="p-2">Subject</th><th className="p-2">Total (100%)</th></tr></thead>
                                     <tbody>
-                                        {Object.entries(grade.subjects).map(([subject, scores]) => <tr key={subject} className="border-b"><td className="p-2 font-medium">{subject}</td><td className="p-2">{scores.total}</td></tr>)}
+                                        {Object.entries(grade.subjects).map(([subject, scores]) => {
+                                             const total = (scores.classAssignments || 0) + (scores.project || 0) + (scores.midterm || 0) + (scores.endOfTerm || 0);
+                                             return <tr key={subject} className="border-b"><td className="p-2 font-medium">{subject}</td><td className="p-2">{total}</td></tr>
+                                        })}
                                     </tbody>
                                 </table>
                             </div>
                         )) : <p>No academic records found.</p>}
-                    </div>
-                );
-            case 'Attendance':
-                 return (
-                    <div>
-                        <h2 className="text-2xl font-bold text-slate-800 mb-4">Attendance History</h2>
-                        <div className="bg-white rounded-lg shadow-sm p-4">
-                            <ul className="space-y-2">
-                                {[...student.attendance].reverse().map((att, i) => (
-                                    <li key={i} className="flex justify-between items-center p-2 border-b"><span>{att.date}</span><span>{att.status}</span></li>
-                                ))}
-                            </ul>
-                        </div>
                     </div>
                 );
             case 'Financials':
@@ -133,14 +127,15 @@ const ParentPortal: React.FC<{ student: ParentUser, page: string }> = ({ student
                     <div>
                         <h2 className="text-2xl font-bold text-slate-800 mb-4">Financial Summary</h2>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
-                            <div className="bg-white p-4 rounded-lg shadow-sm"><p className="text-slate-500">Total Fees</p><p className="font-bold text-xl">GHS {student.financials.totalFees.toFixed(2)}</p></div>
-                            <div className="bg-white p-4 rounded-lg shadow-sm"><p className="text-slate-500">Amount Paid</p><p className="font-bold text-xl">GHS {student.financials.paid.toFixed(2)}</p></div>
-                            <div className="bg-white p-4 rounded-lg shadow-sm"><p className="text-slate-500">Balance Due</p><p className="font-bold text-xl text-red-600">GHS {student.financials.balance.toFixed(2)}</p></div>
+                            <div className="bg-white p-4 rounded-lg shadow-sm"><p className="text-slate-500">Total Bill</p><p className="font-bold text-xl">GHS {summary.totalFees.toFixed(2)}</p></div>
+                            <div className="bg-white p-4 rounded-lg shadow-sm"><p className="text-slate-500">Amount Paid</p><p className="font-bold text-xl">GHS {summary.paid.toFixed(2)}</p></div>
+                            <div className="bg-white p-4 rounded-lg shadow-sm"><p className="text-slate-500">Balance Due</p><p className={`font-bold text-xl ${summary.balance > 0 ? 'text-red-600' : 'text-green-600'}`}>GHS {summary.balance.toFixed(2)}</p></div>
                         </div>
                     </div>
                 );
             case 'Notifications':
-                return <NotificationsComponent user={student} />;
+// Fix: Pass a function that matches the expected prop type for onUpdateNotifications.
+                return <NotificationsComponent user={{...student, role: Role.Parent}} notifications={notifications} onUpdateNotifications={(notifs) => { /* Parents cannot update notifications */ }} />;
             default:
                 return null;
         }
@@ -153,6 +148,11 @@ const App: React.FC = () => {
     const [user, setUser] = useState<LoggedInUser | null>(null);
     const [users, setUsers] = useState(mockUsers);
     const [students, setStudents] = useState(mockStudents);
+    const [staff, setStaff] = useState(mockStaff);
+    const [notifications, setNotifications] = useState(mockNotifications);
+    const [settings, setSettings] = useState<Settings>(mockSettings);
+    const [passwordRequests, setPasswordRequests] = useState<PasswordChangeRequest[]>(mockPasswordRequests);
+
     const [currentPage, setCurrentPage] = useState<string>(Page.Dashboard);
     const [isSidebarOpen, setSidebarOpen] = useState(false);
     const [isChangePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
@@ -165,21 +165,79 @@ const App: React.FC = () => {
     const handleLogout = useCallback(() => {
         setUser(null);
     }, []);
+
+    const handleStudentUpdate = (updatedStudent: Student) => {
+        setStudents(prev => prev.map(s => s.id === updatedStudent.id ? updatedStudent : s));
+    };
+
+    const handleStaffUpdate = (updatedStaff: Staff) => {
+        setStaff(prev => prev.map(s => s.id === updatedStaff.id ? updatedStaff : s));
+    };
+
+    const handleAddStudent = (newStudent: Student) => {
+        setStudents(prev => [newStudent, ...prev]);
+    }
+
+    const handleAddStaffAndUser = (staffData: Omit<Staff, 'id' | 'staffNumber'>, userData: Omit<User, 'id'>, password: string) => {
+        const newStaffId = `S${(staff.length + 1).toString().padStart(3, '0')}`;
+        const catCode = {
+            [StaffCategory.Teaching]: 'T',
+            [StaffCategory.Administration]: 'A',
+            [StaffCategory.ProfessionalSupport]: 'P',
+            [StaffCategory.MaintenanceOperations]: 'M',
+        }[staffData.category as StaffCategory];
+        const staffInCategory = staff.filter(s => s.category === staffData.category).length;
+        const staffNumber = `CCS/${catCode}/${(staffInCategory + 1).toString().padStart(3, '0')}`;
+
+        const newStaff: Staff = { ...staffData, id: newStaffId, staffNumber };
+        setStaff(prev => [newStaff, ...prev]);
+
+        const newUserId = `U${(users.length + 1).toString().padStart(3, '0')}`;
+        const newUser: User & { password: string } = {
+            ...userData,
+            id: newUserId,
+            staffId: newStaffId,
+            password,
+        };
+        setUsers(prev => [...prev, newUser]);
+
+        alert(`Staff ${newStaff.name} created successfully.\nUsername: ${newUser.username}\nDefault Password: Password@123`);
+    };
     
-    const handlePasswordUpdate = (userId: string, newPasswordHash: string) => {
-       if (user?.role === Role.Parent) {
-            setStudents(prev => prev.map(s => s.id === userId ? { ...s, parentPasswordHash: newPasswordHash } : s));
-       } else {
-            const username = Object.keys(users).find(key => users[key].id === userId);
-            if (username) {
-                setUsers(prevUsers => ({
-                    ...prevUsers,
-                    [username]: { ...prevUsers[username], passwordHash: newPasswordHash }
-                }));
-            }
-       }
+    const handlePasswordUpdateRequest = (request: Omit<PasswordChangeRequest, 'id' | 'status'>) => {
+        const fullRequest: PasswordChangeRequest = {
+            ...request,
+            id: `req_${Date.now()}`,
+            status: 'pending'
+        };
+        setPasswordRequests(prev => [...prev, fullRequest]);
+        alert("Password change request submitted for approval.");
+        setChangePasswordModalOpen(false);
+    };
+
+    const handleProcessPasswordRequest = (requestId: string, approved: boolean) => {
+        const request = passwordRequests.find(r => r.id === requestId);
+        if (!request) return;
+
+        if (approved) {
+            handlePasswordUpdate(request.userId, request.newPassword, true);
+        }
+        setPasswordRequests(prev => prev.filter(r => r.id !== requestId));
+    };
+
+    const handlePasswordUpdate = (userId: string, newPassword: string, isAdminUpdate = false) => {
+        const isStudent = students.some(s => s.id === userId);
+        
+        if (isStudent) {
+            setStudents(prev => prev.map(s => s.id === userId ? { ...s, parentPassword: newPassword } : s));
+        } else {
+            setUsers(prevUsers => prevUsers.map(u => 
+                u.id === userId ? { ...u, password: newPassword } : u
+            ));
+        }
+       
        alert("Password changed successfully!");
-       setChangePasswordModalOpen(false);
+       if(!isAdminUpdate) setChangePasswordModalOpen(false);
     };
 
     const renderPage = () => {
@@ -187,28 +245,30 @@ const App: React.FC = () => {
 
         switch (currentPage) {
             case Page.Dashboard:
-                return <Dashboard user={user} setCurrentPage={(p) => setCurrentPage(p)} />;
+                return <Dashboard user={user as User} setCurrentPage={(p) => setCurrentPage(p)} academicYear={settings.academicYear} currentTerm={settings.currentTerm} />;
             case Page.Students:
-                return <Students user={user} />;
-            case Page.Teachers:
-                return <Teachers user={user} />;
+                return <StudentsPage user={user as User} students={students} onUpdateStudent={handleStudentUpdate} onAddStudent={handleAddStudent} onAdminPasswordChange={handlePasswordUpdate} academicYear={settings.academicYear} currentTerm={settings.currentTerm} />;
+            case Page.Staff:
+                return <StaffPage user={user as User} staff={staff} users={users} settings={settings} onUpdateStaff={handleStaffUpdate} onAddStaffAndUser={handleAddStaffAndUser} onAdminPasswordChange={handlePasswordUpdate} />;
             case Page.ClassRecords:
-                 return <ClassManagement initialPage={Page.ClassRecords} user={user} />;
+                 return <ClassManagement initialPage={Page.ClassRecords} user={user as User} students={students} settings={settings} onUpdateStudent={handleStudentUpdate}/>;
             case Page.Examinations:
-                return <ClassManagement initialPage={Page.Examinations} user={user} />;
+                return <ClassManagement initialPage={Page.Examinations} user={user as User} students={students} settings={settings} onUpdateStudent={handleStudentUpdate} />;
             case Page.Financials:
-                return <Financials />;
+                return <Financials students={students} onUpdateStudent={handleStudentUpdate} academicYear={settings.academicYear} currentTerm={settings.currentTerm}/>;
             case Page.Notifications:
-                return <NotificationsComponent user={user} />;
+                return <NotificationsComponent user={user} notifications={notifications} onUpdateNotifications={setNotifications} />;
+            case Page.Settings:
+                return <SchoolSettings settings={settings} onUpdateSettings={setSettings} requests={passwordRequests} onProcessRequest={handleProcessPasswordRequest} />;
             case Page.Backup:
                 return <ComingSoon page={Page.Backup} />;
             default:
-                return <Dashboard user={user} setCurrentPage={(p) => setCurrentPage(p)} />;
+                return <Dashboard user={user as User} setCurrentPage={(p) => setCurrentPage(p)} academicYear={settings.academicYear} currentTerm={settings.currentTerm} />;
         }
     };
     
     if (!user) {
-        return <Login onLogin={handleLogin} users={users} students={students} />;
+        return <Login onLogin={handleLogin} students={students} users={users} />;
     }
 
     return (
@@ -220,11 +280,11 @@ const App: React.FC = () => {
             <div className="flex-1 flex flex-col min-w-0">
                 <Header user={user} toggleSidebar={() => setSidebarOpen(!isSidebarOpen)} onChangePassword={() => setChangePasswordModalOpen(true)} />
                 <main className="flex-1 overflow-y-auto">
-                    {user.role === Role.Parent ? <ParentPortal student={user} page={currentPage} /> : renderPage()}
+                    {user.role === Role.Parent ? <ParentPortal student={students.find(s=> s.id === user.id)!} page={currentPage} notifications={notifications}/> : renderPage()}
                 </main>
             </div>
              {isSidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden"></div>}
-             {isChangePasswordModalOpen && <ChangePasswordModal user={user} users={users} students={students} onClose={() => setChangePasswordModalOpen(false)} onSave={handlePasswordUpdate} />}
+             {isChangePasswordModalOpen && <ChangePasswordModal user={user} users={users} students={students} onClose={() => setChangePasswordModalOpen(false)} onSave={handlePasswordUpdate} onSaveRequest={handlePasswordUpdateRequest} />}
         </div>
     );
 };

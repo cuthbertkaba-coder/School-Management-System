@@ -1,8 +1,9 @@
-
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { Student, StudentNote, User, Role } from '../types';
+import { Student, StudentNote, User, Role, FeeItem, Discount, DiscountType, DISCOUNT_TYPES, SchoolDocument } from '../types';
 import { mockStudents } from '../data/mockData';
 import { CLASSES, SCHOOL_LOGO_URL, SCHOOL_NAME, SUBJECTS, SUBJECTS_JUNIOR } from '../constants';
+import { calculateFinancials } from '../utils/auth';
+import { AdminChangePasswordModal } from './Settings';
 
 const DEFAULT_AVATAR_URL = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI2NkZDZlMyI+PHBhdGggZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNMTguNjg1IDE5LjA5N0E5LjcyMyA5LjcyMyAwIDAwMjEuNzUgMTJjMC01LjM4NS00LjM2NS05Ljc1LTkuNzUtOS43NVM S5MjUgNi42MTUgMi4yNSAxMmE5LjcyMyA5LjcyMyAwIDAwMy4wNjUgNy4wOTdBOTcxNiA5LjcxNiAwIDAwMTIgMjEuNzVhOS4xMTYgOS43MTYgMCAwMDYuNjg1LTIuNjUzem0tMTIuNTQtMS4yODVBNy40ODYgNy40ODYgMCAwMTEyIDE1YTcuNDg2IDcuNDg2IDAgMDE1Ljg1NSAyLjgxMkE4LjIyNCA4LjIyNCAwIDAxMTIgMjAuMjVhOC4yMjQgOC4yMjQgMCAwMS01Ljg1NS0yLjQzOHpNM TcuNzUgOWEzLjc1IDMuNzUgMCAxMS03LjUgMCAzLjc1IDMuNzUgMCAwMTcuNSAwem0iIGNsaXAtcnVsZT0iZXZlbm9kZCIgLz48L3N2Zz4=";
 
@@ -70,6 +71,7 @@ const PromoteStudentModal: React.FC<{
             return;
         }
         onSave(student.id, newClass, action === 'repeat');
+        onClose();
     };
 
     return (
@@ -97,7 +99,7 @@ const PromoteStudentModal: React.FC<{
                 </div>
                  <div className="flex justify-end space-x-4 mt-6">
                     <button onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300">Cancel</button>
-                    <button onClick={handleSave} className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700">Confirm Action</button>
+                    <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Confirm Action</button>
                 </div>
             </div>
         </div>
@@ -105,21 +107,32 @@ const PromoteStudentModal: React.FC<{
 };
 
 
+const generateNewStudentId = (enrolmentDate: string, allStudents: Student[]): string => {
+    if (!enrolmentDate) return "Invalid Date";
+    try {
+        const year = new Date(enrolmentDate).getFullYear();
+        if (isNaN(year)) return "Invalid Date";
+        
+        const studentsInYear = allStudents.filter(s => {
+            try {
+                return new Date(s.enrolmentDate).getFullYear() === year;
+            } catch (e) {
+                return false;
+            }
+        }).length;
+        const sequence = (studentsInYear + 1).toString().padStart(3, '0');
+        return `CCS${year}${sequence}`;
+    } catch (e) {
+        return "Invalid Date";
+    }
+};
+
+
 const AddStudentModal: React.FC<{
   onClose: () => void;
-  onSave: (newStudentData: {
-    name: string;
-    dateOfBirth: string;
-    gender: 'Male' | 'Female';
-    guardianName: string;
-    guardianContact: string;
-    guardianEmail: string;
-    enrolmentDate: string;
-    currentClass: string;
-    photoUrl: string | null;
-  }) => void;
-  nextId: string;
-}> = ({ onClose, onSave, nextId }) => {
+  onSave: (newStudentData: Omit<Student, 'id' | 'classHistory' | 'positionsHeld' | 'interests' | 'awards' | 'financials' | 'attendance' | 'grades' | 'privateNotes' | 'status' | 'documents'>) => void;
+  students: Student[];
+}> = ({ onClose, onSave, students }) => {
   const [name, setName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [gender, setGender] = useState<'Male' | 'Female'>('Male');
@@ -129,7 +142,9 @@ const AddStudentModal: React.FC<{
   const [currentClass, setCurrentClass] = useState(CLASSES[0]);
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const enrolmentDate = new Date().toISOString().split('T')[0];
+  const [enrolmentDate, setEnrolmentDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  const studentId = useMemo(() => generateNewStudentId(enrolmentDate, students), [enrolmentDate, students]);
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -144,11 +159,13 @@ const AddStudentModal: React.FC<{
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !dateOfBirth || !guardianName || !guardianContact || !currentClass) {
+    if (!name || !dateOfBirth || !guardianName || !guardianContact || !currentClass || !enrolmentDate) {
         alert("Please fill all required fields.");
         return;
     }
-    onSave({ name, dateOfBirth, gender, guardianName, guardianContact, guardianEmail, enrolmentDate, currentClass, photoUrl });
+    // Default parent password is 'Password@123'
+    const parentPassword = 'Password@123';
+    onSave({ name, dateOfBirth, gender, guardianName, guardianContact, guardianEmail, enrolmentDate, currentClass, photoUrl: photoUrl || DEFAULT_AVATAR_URL, parentPassword });
   };
   
   const animationStyle = { animation: 'fade-in-up 0.3s ease-out forwards' };
@@ -188,31 +205,31 @@ const AddStudentModal: React.FC<{
                         </button>
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-slate-700">Student ID</label>
-                        <input type="text" value={nextId} readOnly className="mt-1 w-full p-2 border border-slate-300 rounded-lg bg-slate-100 cursor-not-allowed" />
+                        <label className="block text-sm font-medium text-slate-700">Enrolment Date*</label>
+                        <input type="date" value={enrolmentDate} onChange={e => setEnrolmentDate(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-700">Enrolment Date</label>
-                        <input type="date" value={enrolmentDate} readOnly className="mt-1 w-full p-2 border border-slate-300 rounded-lg bg-slate-100 cursor-not-allowed" />
+                     <div>
+                        <label className="block text-sm font-medium text-slate-700">Generated Student ID</label>
+                        <input type="text" value={studentId} readOnly className="mt-1 w-full p-2 border border-slate-300 rounded-lg bg-slate-100 cursor-not-allowed" />
                     </div>
                     <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-slate-700">Full Name*</label>
-                        <input type="text" value={name} onChange={e => setName(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                        <input type="text" value={name} onChange={e => setName(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                      <div>
                         <label className="block text-sm font-medium text-slate-700">Date of Birth*</label>
-                        <input type="date" value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                        <input type="date" value={dateOfBirth} onChange={e => setDateOfBirth(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                      <div>
                         <label className="block text-sm font-medium text-slate-700">Gender*</label>
-                        <select value={gender} onChange={e => setGender(e.target.value as 'Male' | 'Female')} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500">
+                        <select value={gender} onChange={e => setGender(e.target.value as 'Male' | 'Female')} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
                             <option value="Male">Male</option>
                             <option value="Female">Female</option>
                         </select>
                     </div>
                      <div>
                         <label className="block text-sm font-medium text-slate-700">Current Class*</label>
-                        <select value={currentClass} onChange={e => setCurrentClass(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500">
+                        <select value={currentClass} onChange={e => setCurrentClass(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
                             {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
                         </select>
                     </div>
@@ -221,20 +238,20 @@ const AddStudentModal: React.FC<{
                     </div>
                      <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-slate-700">Guardian's Full Name*</label>
-                        <input type="text" value={guardianName} onChange={e => setGuardianName(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                        <input type="text" value={guardianName} onChange={e => setGuardianName(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                      <div>
                         <label className="block text-sm font-medium text-slate-700">Guardian's Contact Number*</label>
-                        <input type="tel" placeholder='e.g. 024-123-4567' value={guardianContact} onChange={e => setGuardianContact(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                        <input type="tel" placeholder='e.g. 024-123-4567' value={guardianContact} onChange={e => setGuardianContact(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-slate-700">Guardian's Email</label>
-                        <input type="email" placeholder='e.g. guardian@example.com' value={guardianEmail} onChange={e => setGuardianEmail(e.target.value)} className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                        <input type="email" placeholder='e.g. guardian@example.com' value={guardianEmail} onChange={e => setGuardianEmail(e.target.value)} className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                     </div>
                 </div>
                 <div className="flex justify-end space-x-4 mt-6">
                     <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300 transition-colors">Cancel</button>
-                    <button type="submit" className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors">Save Student</button>
+                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">Save Student</button>
                 </div>
             </form>
         </div>
@@ -257,7 +274,9 @@ const PrintableReportCardModal: React.FC<{
     report: any;
     student: Student;
     onClose: () => void;
-}> = ({ report, student, onClose }) => {
+    academicYear: string;
+    currentTerm: string;
+}> = ({ report, student, onClose, academicYear, currentTerm }) => {
     const reportCardRef = useRef<HTMLDivElement>(null);
 
     const handlePrint = () => {
@@ -291,7 +310,8 @@ const PrintableReportCardModal: React.FC<{
                         <div><strong>Student:</strong> {student.name}</div>
                         <div><strong>Student ID:</strong> {student.id}</div>
                         <div><strong>Class:</strong> {student.currentClass}</div>
-                        <div><strong>Term:</strong> {report.term}</div>
+                        <div><strong>Academic Year:</strong> {academicYear}</div>
+                        <div><strong>Term:</strong> {currentTerm}</div>
                         <div><strong>Position:</strong> {report.position}</div>
                         <div><strong>Average:</strong> {report.average}%</div>
                     </div>
@@ -329,7 +349,7 @@ const PrintableReportCardModal: React.FC<{
                 <div className="flex justify-end space-x-4 mt-2 p-4 bg-slate-50 border-t rounded-b-lg no-print">
                     <button onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg hover:bg-slate-300">Close</button>
                     <button onClick={handleExport} className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700">Export PDF</button>
-                    <button onClick={handlePrint} className="px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700">Print Report</button>
+                    <button onClick={handlePrint} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Print Report</button>
                 </div>
             </div>
         </div>
@@ -345,21 +365,16 @@ const StudentDetails: React.FC<{
     onPromoteStudent: (studentId: string, newClass: string, isRepeating: boolean) => void;
     onArchiveStudent: (studentId: string) => void;
     onDeleteStudent: (studentId: string) => void;
-}> = ({ student, user, onBack, onUpdateStudent, onPromoteStudent, onArchiveStudent, onDeleteStudent }) => {
+    onAdminPasswordChange: (userId: string, newPassword: string) => void;
+    academicYear: string;
+    currentTerm: string;
+}> = ({ student, user, onBack, onUpdateStudent, onPromoteStudent, onArchiveStudent, onDeleteStudent, onAdminPasswordChange, academicYear, currentTerm }) => {
     const age = new Date().getFullYear() - new Date(student.dateOfBirth).getFullYear();
     const [activeTab, setActiveTab] = useState('profile');
     
-    const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
-    const [paymentAmount, setPaymentAmount] = useState('');
-    const [receiptNumber, setReceiptNumber] = useState('');
-
     const [isEditing, setIsEditing] = useState(false);
     const [editableStudent, setEditableStudent] = useState<Student>(student);
     const [newNoteContent, setNewNoteContent] = useState('');
-    
-    const [isAddingScores, setIsAddingScores] = useState(false);
-    const [newTermName, setNewTermName] = useState('');
-    const [newScores, setNewScores] = useState<{ [subject: string]: { ca: string; exam: string } }>({});
     
     const [reportToPrint, setReportToPrint] = useState<any | null>(null);
     const profileRef = useRef<HTMLDivElement>(null);
@@ -367,11 +382,15 @@ const StudentDetails: React.FC<{
     const [isPromoteModalOpen, setPromoteModalOpen] = useState(false);
     const [isArchiveModalOpen, setArchiveModalOpen] = useState(false);
     const [isDeleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [isChangePasswordModalOpen, setChangePasswordModalOpen] = useState(false);
+    
+    const [docName, setDocName] = useState('');
+    const docFileRef = useRef<HTMLInputElement>(null);
 
+// Fix: Corrected typo from `usememo` to `useMemo`.
     const canPerformAdminActions = useMemo(() => user.role === Role.Admin || user.role === Role.Headteacher, [user.role]);
     const canEdit = useMemo(() => canPerformAdminActions || user.role === Role.Teacher, [canPerformAdminActions, user.role]);
-    const isViewOnly = useMemo(() => user.role === Role.SMCChair, [user.role]);
-
+    const financialsSummary = useMemo(() => calculateFinancials(student.financials), [student.financials]);
 
     useEffect(() => {
         setEditableStudent(student);
@@ -389,8 +408,11 @@ const StudentDetails: React.FC<{
         const awardsArray = typeof editableStudent.awards === 'string'
             ? (editableStudent.awards as string).split(',').map(a => a.trim()).filter(Boolean)
             : editableStudent.awards;
+        const positionsHeldArray = typeof editableStudent.positionsHeld === 'string'
+            ? (editableStudent.positionsHeld as string).split(',').map(p => p.trim()).filter(Boolean)
+            : editableStudent.positionsHeld;
 
-        const finalStudent = { ...editableStudent, interests: interestsArray, awards: awardsArray };
+        const finalStudent = { ...editableStudent, interests: interestsArray, awards: awardsArray, positionsHeld: positionsHeldArray };
 
         if (finalStudent.currentClass !== student.currentClass) {
             if (student.classHistory[student.classHistory.length - 1] !== finalStudent.currentClass) {
@@ -407,30 +429,6 @@ const StudentDetails: React.FC<{
         setIsEditing(false);
     };
 
-    const sortedPayments = useMemo(() => 
-        [...student.financials.payments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-    [student.financials.payments]);
-
-    const handleAddPayment = (e: React.FormEvent) => {
-        e.preventDefault();
-        const amount = parseFloat(paymentAmount);
-        if (!paymentDate || isNaN(amount) || amount <= 0 || !receiptNumber.trim()) {
-            alert('Please fill all fields with valid data.');
-            return;
-        }
-
-        const newPayment = { date: paymentDate, amount, receipt: receiptNumber.trim() };
-        const updatedFinancials = {
-            ...student.financials,
-            paid: student.financials.paid + amount,
-            balance: student.financials.balance - amount,
-            payments: [...student.financials.payments, newPayment]
-        };
-        onUpdateStudent({ ...student, financials: updatedFinancials });
-        setPaymentAmount('');
-        setReceiptNumber('');
-    };
-
     const handleAddNote = () => {
         if (!newNoteContent.trim()) return;
         const newNote: StudentNote = {
@@ -441,81 +439,86 @@ const StudentDetails: React.FC<{
         onUpdateStudent({ ...student, privateNotes: [...student.privateNotes, newNote] });
         setNewNoteContent('');
     };
-
-    const handleScoreChange = (subject: string, type: 'ca' | 'exam', value: string) => {
-        const max = type === 'ca' ? 30 : 70;
-        const numValue = parseInt(value, 10);
-        if (numValue > max) return;
-        
-        setNewScores(prev => ({
-            ...prev,
-            [subject]: {
-                ...prev[subject],
-                [type]: value,
-            },
-        }));
-    };
-
-    const handleSaveScores = (e: React.FormEvent) => {
+    
+    const handleAddDocument = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!newTermName.trim()) {
-            alert('Please enter a term name.');
+        const file = docFileRef.current?.files?.[0];
+        if (!docName.trim() || !file) {
+            alert("Please provide a document name and select a file.");
             return;
         }
-        const subjectsWithScores: { [subject: string]: { ca: number; exam: number; total: number } } = {};
-        let totalScoreSum = 0;
-        let subjectCount = 0;
-        Object.keys(newScores).forEach(subject => {
-            const ca = parseInt(newScores[subject].ca || '0', 10);
-            const exam = parseInt(newScores[subject].exam || '0', 10);
-            if (ca > 0 || exam > 0) {
-                const total = ca + exam;
-                subjectsWithScores[subject] = { ca, exam, total };
-                totalScoreSum += total;
-                subjectCount++;
-            }
-        });
-        if (subjectCount === 0) {
-            alert('Please enter scores for at least one subject.');
-            return;
-        }
-        const average = parseFloat((totalScoreSum / subjectCount).toFixed(2));
-        const newGradeEntry = {
-            term: newTermName.trim(),
-            subjects: subjectsWithScores,
-            average,
-            position: 0, // Position calculation is complex and requires whole class data
+        const newDoc: SchoolDocument = {
+            name: docName,
+            url: '#', // Placeholder URL
+            date: new Date().toISOString().split('T')[0]
         };
-        const updatedGrades = [...student.grades, newGradeEntry];
-        onUpdateStudent({ ...student, grades: updatedGrades });
-        setIsAddingScores(false);
-        setNewTermName('');
-        setNewScores({});
+        onUpdateStudent({ ...student, documents: [...(student.documents || []), newDoc]});
+        setDocName('');
+        if(docFileRef.current) docFileRef.current.value = '';
     };
 
-    const isJunior = CLASSES.indexOf(student.currentClass) < 11;
-    const relevantSubjects = isJunior ? SUBJECTS_JUNIOR : SUBJECTS;
+    const renderField = (label: string, value: any, name: string, type = 'text', options: string[] = []) => (
+        <div>
+            <strong className="block mb-1 text-sm text-slate-600">{label}</strong>
+            {isEditing ? (
+                type === 'select' ? (
+                     <select name={name} value={value} onChange={handleProfileChange} className="w-full p-2 border rounded-md border-slate-300 bg-white focus:ring-2 focus:ring-blue-500">
+                        {options.map(o => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                ) : type === 'textarea' ? (
+                     <textarea name={name} value={Array.isArray(value) ? value.join(', ') : value} onChange={handleProfileChange} className="w-full p-2 border rounded-md border-slate-300 bg-white focus:ring-2 focus:ring-blue-500" rows={2}/>
+                ) : (
+                    <input type={type} name={name} value={value} onChange={handleProfileChange} className="w-full p-2 border rounded-md border-slate-300 bg-white focus:ring-2 focus:ring-blue-500"/>
+                )
+            ) : (
+                <p className="p-2 bg-slate-50 rounded-md">{Array.isArray(value) ? value.join(', ') || 'N/A' : value}</p>
+            )}
+        </div>
+    );
+
+    const handleAddFeeItem = (feeItem: Omit<FeeItem, 'date'>) => {
+        const newFeeItem: FeeItem = { ...feeItem, date: new Date().toISOString().split('T')[0] };
+        const updatedStudent = {
+            ...student,
+            financials: {
+                ...student.financials,
+                feeItems: [...student.financials.feeItems, newFeeItem]
+            }
+        };
+        onUpdateStudent(updatedStudent);
+    };
+
+    const handleApplyDiscount = (discount: Discount) => {
+        const updatedStudent = {
+            ...student,
+            financials: {
+                ...student.financials,
+                discounts: [...student.financials.discounts, discount]
+            }
+        };
+        onUpdateStudent(updatedStudent);
+    };
 
     return (
         <>
         <div ref={profileRef} className="bg-white p-6 rounded-lg shadow-lg animate-fade-in">
-            <button onClick={onBack} className="mb-4 text-sky-600 hover:underline no-print">&larr; Back to Student List</button>
+            <button onClick={onBack} className="mb-4 text-blue-600 hover:underline no-print">&larr; Back to Student List</button>
             <div className="flex flex-col md:flex-row items-start md:space-x-8">
                 <div className="text-center mb-6 md:mb-0">
                     <img src={student.photoUrl} alt={student.name} className="w-40 h-40 rounded-full object-cover mx-auto shadow-md" />
-                    <h2 className="text-2xl font-bold text-slate-800 mt-4">{student.name}</h2>
+                    <h2 className="text-2xl font-bold text-slate-800 mt-4">{isEditing ? <input type="text" name="name" value={editableStudent.name} onChange={handleProfileChange} className="w-full text-center p-1 border rounded-md border-slate-300"/> : student.name}</h2>
                     <p className="text-slate-600 font-medium mt-1">Student ID: <span className="font-mono bg-slate-100 px-2 py-0.5 rounded">{student.id}</span></p>
-                    <p className="text-sm bg-sky-100 text-sky-800 font-medium px-3 py-1 rounded-full inline-block mt-2">{student.currentClass}</p>
+                    <p className="text-sm bg-blue-100 text-blue-800 font-medium px-3 py-1 rounded-full inline-block mt-2">{student.currentClass}</p>
                      {student.status === 'archived' && <p className="text-sm bg-yellow-100 text-yellow-800 font-medium px-3 py-1 rounded-full inline-block mt-2">Archived</p>}
                 </div>
                 <div className="flex-1 w-full">
                     <div className="border-b border-slate-200 mb-4 no-print">
-                        <nav className="flex space-x-4">
-                            <button onClick={() => setActiveTab('profile')} className={`py-2 px-1 font-medium ${activeTab === 'profile' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500'}`}>Profile</button>
-                            <button onClick={() => setActiveTab('academics')} className={`py-2 px-1 font-medium ${activeTab === 'academics' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500'}`}>Academics</button>
-                            <button onClick={() => setActiveTab('attendance')} className={`py-2 px-1 font-medium ${activeTab === 'attendance' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500'}`}>Attendance</button>
-                            <button onClick={() => setActiveTab('financials')} className={`py-2 px-1 font-medium ${activeTab === 'financials' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500'}`}>Financials</button>
-                            {canEdit && <button onClick={() => setActiveTab('notes')} className={`py-2 px-1 font-medium ${activeTab === 'notes' ? 'border-b-2 border-sky-500 text-sky-600' : 'text-slate-500'}`}>Private Notes</button>}
+                        <nav className="flex space-x-2 sm:space-x-4 flex-wrap">
+                            <button onClick={() => setActiveTab('profile')} className={`py-2 px-1 font-medium ${activeTab === 'profile' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Profile</button>
+                            <button onClick={() => setActiveTab('academics')} className={`py-2 px-1 font-medium ${activeTab === 'academics' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Academics</button>
+                            <button onClick={() => setActiveTab('financials')} className={`py-2 px-1 font-medium ${activeTab === 'financials' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Financials</button>
+                             <button onClick={() => setActiveTab('documents')} className={`py-2 px-1 font-medium ${activeTab === 'documents' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Documents</button>
+                            {canEdit && <button onClick={() => setActiveTab('notes')} className={`py-2 px-1 font-medium ${activeTab === 'notes' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500'}`}>Private Notes</button>}
                         </nav>
                     </div>
                     {activeTab === 'profile' && (
@@ -538,47 +541,33 @@ const StudentDetails: React.FC<{
                                 </div>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-4 gap-x-6 text-slate-700">
-                                <div><strong>Date of Birth:</strong> {student.dateOfBirth} ({age} years)</div>
-                                <div><strong>Gender:</strong> {student.gender}</div>
-                                <div><strong>Enrolment Date:</strong> {student.enrolmentDate}</div>
-                                <div>
-                                    <strong className="block mb-1">Current Class:</strong>
-                                    {isEditing ? (
-                                        <select name="currentClass" value={editableStudent.currentClass} onChange={handleProfileChange} className="w-full p-1 border rounded-md border-slate-300">
-                                            {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
-                                        </select>
-                                    ) : student.currentClass}
-                                </div>
-                                <div><strong>Guardian:</strong> {student.guardianName}</div>
-                                <div>
-                                    <strong className="block mb-1">Guardian Email:</strong>
-                                    {isEditing ? <input type="email" name="guardianEmail" value={editableStudent.guardianEmail} onChange={handleProfileChange} className="w-full p-1 border rounded-md border-slate-300"/> : student.guardianEmail}
-                                </div>
-                                <div>
-                                    <strong className="block mb-1">Guardian Contact:</strong>
-                                    {isEditing ? <input type="text" name="guardianContact" value={editableStudent.guardianContact} onChange={handleProfileChange} className="w-full p-1 border rounded-md border-slate-300"/> : student.guardianContact}
-                                    {!isEditing && (
+                                {renderField('Date of Birth', editableStudent.dateOfBirth, 'dateOfBirth', 'date')}
+                                {renderField('Gender', editableStudent.gender, 'gender', 'select', ['Male', 'Female'])}
+                                {renderField('Enrolment Date', editableStudent.enrolmentDate, 'enrolmentDate', 'date')}
+                                {renderField('Current Class', editableStudent.currentClass, 'currentClass', 'select', CLASSES)}
+                                {renderField("Guardian's Name", editableStudent.guardianName, 'guardianName')}
+                                {renderField("Guardian's Email", editableStudent.guardianEmail, 'guardianEmail', 'email')}
+                                {renderField("Guardian's Contact", editableStudent.guardianContact, 'guardianContact', 'tel')}
+                                <div className="sm:col-span-2">{renderField('Positions Held', editableStudent.positionsHeld, 'positionsHeld', 'textarea')}</div>
+                                <div className="sm:col-span-2">{renderField('Interests', editableStudent.interests, 'interests', 'textarea')}</div>
+                                <div className="sm:col-span-2">{renderField('Awards & Recognition', editableStudent.awards, 'awards', 'textarea')}</div>
+
+                                {!isEditing && (
+                                    <div className="sm:col-span-2">
+                                        <strong>Actions:</strong>
                                         <div className="mt-2 space-x-2 no-print">
-                                            <a href={`sms:${student.guardianContact}`} className="text-xs bg-slate-200 text-slate-700 px-3 py-1 rounded-md hover:bg-slate-300 transition-colors">Send SMS</a>
-                                            <a href={`mailto:${student.guardianEmail}?subject=Message from ${SCHOOL_NAME}`} className="text-xs bg-sky-100 text-sky-800 px-3 py-1 rounded-md hover:bg-sky-200 transition-colors">Send Email</a>
+                                            <a href={`sms:${student.guardianContact}`} className="text-xs bg-slate-200 text-slate-700 px-3 py-1 rounded-md hover:bg-slate-300 transition-colors">Send SMS to Guardian</a>
+                                            <a href={`mailto:${student.guardianEmail}?subject=Message from ${SCHOOL_NAME}`} className="text-xs bg-blue-100 text-blue-800 px-3 py-1 rounded-md hover:bg-blue-200 transition-colors">Send Email to Guardian</a>
                                         </div>
-                                    )}
-                                </div>
-                                <div><strong>Positions Held:</strong> {student.positionsHeld.join(', ') || 'N/A'}</div>
-                                <div className="sm:col-span-2">
-                                    <strong className="block mb-1">Interests:</strong>
-                                    {isEditing ? <textarea name="interests" value={Array.isArray(editableStudent.interests) ? editableStudent.interests.join(', ') : editableStudent.interests} onChange={handleProfileChange} className="w-full p-1 border rounded-md border-slate-300" rows={2}/> : student.interests.join(', ') || 'N/A'}
-                                </div>
-                                <div className="sm:col-span-2">
-                                    <strong className="block mb-1">Awards & Recognition:</strong>
-                                    {isEditing ? <textarea name="awards" value={Array.isArray(editableStudent.awards) ? editableStudent.awards.join(', ') : editableStudent.awards} onChange={handleProfileChange} className="w-full p-1 border rounded-md border-slate-300" rows={2}/> : student.awards.join(', ') || 'N/A'}
-                                </div>
+                                    </div>
+                                )}
                             </div>
                              {canPerformAdminActions && student.status === 'active' && (
                                 <div className="border-t mt-6 pt-4 no-print">
                                     <h3 className="font-bold text-lg text-slate-800 mb-2">Administrative Actions</h3>
                                     <div className="flex flex-wrap gap-2">
-                                        <button onClick={() => setPromoteModalOpen(true)} className="text-sm bg-indigo-500 text-white px-3 py-1.5 rounded-md hover:bg-indigo-600 transition-colors">Promote / Repeat</button>
+                                        <button onClick={() => setPromoteModalOpen(true)} className="text-sm bg-indigo-500 text-white px-3 py-1.5 rounded-md hover:bg-indigo-600 transition-colors">Promote/Repeat Student</button>
+                                        <button onClick={() => setChangePasswordModalOpen(true)} className="text-sm bg-slate-600 text-white px-3 py-1.5 rounded-md hover:bg-slate-700 transition-colors">Change Parent Password</button>
                                         <button onClick={() => setArchiveModalOpen(true)} className="text-sm bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600 transition-colors">Archive Student</button>
                                         <button onClick={() => setDeleteModalOpen(true)} className="text-sm bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700 transition-colors">Delete Student</button>
                                     </div>
@@ -586,433 +575,365 @@ const StudentDetails: React.FC<{
                             )}
                         </div>
                     )}
-                     {activeTab === 'academics' && (
+
+                    {activeTab === 'academics' && (
                         <div className="animate-fade-in">
-                            <h3 className="font-bold text-lg mb-2 text-slate-800">Class History</h3>
-                            <p className="text-slate-600 mb-4">{student.classHistory.join(' -> ')}</p>
-                            <h3 className="font-bold text-lg mb-2 text-slate-800">Term Reports</h3>
-                             {student.grades.length > 0 ? student.grades.map(grade => (
-                                <div key={grade.term} className="border rounded-lg p-4 mb-4">
-                                     <div className="flex justify-between items-start">
-                                        <p className="font-semibold">{grade.term} - Average: {grade.average}%, Position: {grade.position}</p>
-                                        <div className="space-x-2 no-print">
-                                            <button onClick={() => setReportToPrint(grade)} className="text-xs bg-slate-200 text-slate-700 px-2 py-1 rounded hover:bg-slate-300">Print/Export</button>
+                            <h3 className="font-bold text-lg text-slate-800 mb-4">Academic Records</h3>
+                             {student.grades.map(grade => (
+                                <div key={grade.term} className="mb-6">
+                                    <div className="flex justify-between items-baseline bg-slate-100 p-3 rounded-t-lg">
+                                        <h4 className="font-bold text-slate-800">{grade.term}</h4>
+                                        <div className="text-sm">
+                                            <span className="font-semibold">Overall Average:</span> {grade.average}% | <span className="font-semibold">Position:</span> {grade.position}
                                         </div>
-                                     </div>
-                                     <div className="overflow-x-auto mt-2">
-                                        <table className="w-full text-sm text-left">
-                                            <thead className="bg-slate-50">
+                                    </div>
+                                    <div className="overflow-x-auto border-x border-b rounded-b-lg">
+                                        <table className="w-full text-sm">
+                                            <thead className="text-left bg-slate-50">
                                                 <tr>
-                                                    <th className="p-2">Subject</th>
-                                                    <th className="p-2">CA (30%)</th>
-                                                    <th className="p-2">Exam (70%)</th>
-                                                    <th className="p-2">Total (100%)</th>
+                                                    <th className="p-2 font-semibold">Subject</th>
+                                                    <th className="p-2 font-semibold text-center">Class Assignments & Tests (20)</th>
+                                                    <th className="p-2 font-semibold text-center">Project/Practical Work (10)</th>
+                                                    <th className="p-2 font-semibold text-center text-blue-700">CA Total (30)</th>
+                                                    <th className="p-2 font-semibold text-center">Mid-Term</th>
+                                                    <th className="p-2 font-semibold text-center">End of Term</th>
+                                                    <th className="p-2 font-semibold text-center text-blue-700">Exam Total (70)</th>
+                                                    <th className="p-2 font-semibold text-center bg-slate-200">Final (100)</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {Object.entries(grade.subjects).map(([subject, scores]) =>(
-                                                    <tr key={subject} className="border-b last:border-b-0">
-                                                        <td className="p-2 font-medium">{subject}</td>
-                                                        <td className="p-2">{scores.ca}</td>
-                                                        <td className="p-2">{scores.exam}</td>
-                                                        <td className="p-2 font-semibold">{scores.total}</td>
-                                                    </tr>
-                                                ))}
+                                                {Object.entries(grade.subjects).map(([subject, scores]) => {
+                                                    const ca_total = (scores.classAssignments || 0) + (scores.project || 0);
+                                                    const exam_total = (scores.midterm || 0) + (scores.endOfTerm || 0);
+                                                    const final_total = ca_total + exam_total;
+                                                    return (
+                                                        <tr key={subject} className="border-t">
+                                                            <td className="p-2 font-medium">{subject}</td>
+                                                            <td className="p-2 text-center">{scores.classAssignments || '-'}</td>
+                                                            <td className="p-2 text-center">{scores.project || '-'}</td>
+                                                            <td className="p-2 text-center font-semibold text-blue-600">{ca_total}</td>
+                                                            <td className="p-2 text-center">{scores.midterm || '-'}</td>
+                                                            <td className="p-2 text-center">{scores.endOfTerm || '-'}</td>
+                                                            <td className="p-2 text-center font-semibold text-blue-600">{exam_total}</td>
+                                                            <td className="p-2 text-center font-bold bg-slate-100">{final_total}</td>
+                                                        </tr>
+                                                    )
+                                                })}
                                             </tbody>
                                         </table>
-                                     </div>
+                                    </div>
                                 </div>
-                            )) : <p className="text-slate-500">No academic records found.</p>}
-
-                             <div className="mt-6 no-print">
-                                {!isViewOnly && (isAddingScores ? (
-                                    <form onSubmit={handleSaveScores} className="p-4 border rounded-lg bg-slate-50">
-                                        <h4 className="font-bold text-md mb-4 text-slate-700">New Term Report</h4>
-                                        <input 
-                                            type="text"
-                                            value={newTermName}
-                                            onChange={e => setNewTermName(e.target.value)}
-                                            placeholder="Term Name (e.g. First Term 2024)"
-                                            required
-                                            className="w-full md:w-1/2 p-2 border border-slate-300 rounded-lg mb-4 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                        />
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full text-sm">
-                                                <thead className="bg-slate-200">
-                                                    <tr>
-                                                        <th className="p-2 text-left">Subject</th>
-                                                        <th className="p-2 text-left">CA (30)</th>
-                                                        <th className="p-2 text-left">Exam (70)</th>
-                                                        <th className="p-2 text-left">Total</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {relevantSubjects.map(subject => (
-                                                        <tr key={subject} className="border-b">
-                                                            <td className="p-2 font-medium text-slate-800">{subject}</td>
-                                                            <td className="p-2">
-                                                                <input type="number" value={newScores[subject]?.ca || ''} onChange={e => handleScoreChange(subject, 'ca', e.target.value)} max="30" className="w-20 p-1 border rounded-md border-slate-300"/>
-                                                            </td>
-                                                            <td className="p-2">
-                                                                <input type="number" value={newScores[subject]?.exam || ''} onChange={e => handleScoreChange(subject, 'exam', e.target.value)} max="70" className="w-20 p-1 border rounded-md border-slate-300"/>
-                                                            </td>
-                                                            <td className="p-2 font-semibold">
-                                                                {(parseInt(newScores[subject]?.ca || '0') || 0) + (parseInt(newScores[subject]?.exam || '0') || 0)}
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                        <div className="flex justify-end space-x-2 mt-4">
-                                            <button type="button" onClick={() => setIsAddingScores(false)} className="px-3 py-1 bg-slate-200 text-slate-800 rounded-md text-sm hover:bg-slate-300 transition-colors">Cancel</button>
-                                            <button type="submit" className="px-3 py-1 bg-sky-600 text-white rounded-md text-sm hover:bg-sky-700 transition-colors">Save Scores</button>
-                                        </div>
-                                    </form>
-                                ) : (
-                                    <button onClick={() => setIsAddingScores(true)} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 transition-colors">Add New Term Report</button>
-                                ))}
-                            </div>
+                             ))}
+                             {student.grades.length === 0 && <p className="p-4 bg-white rounded-lg border text-slate-500">No academic records found for this student.</p>}
                         </div>
                     )}
-                    {activeTab === 'attendance' && (
-                        <div className="animate-fade-in">
-                            <h3 className="font-bold text-lg mb-4 text-slate-800">Attendance History</h3>
-                            <div className="max-h-96 overflow-y-auto pr-2 border rounded-lg">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-slate-50 sticky top-0">
-                                        <tr>
-                                            <th className="p-3">Date</th>
-                                            <th className="p-3">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {student.attendance.length > 0 ? [...student.attendance].reverse().map((att, index) => (
-                                            <tr key={index} className="border-b last:border-b-0">
-                                                <td className="p-3 font-medium text-slate-700">{att.date}</td>
-                                                <td className="p-3">
-                                                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                                                        att.status === 'Present' ? 'bg-green-100 text-green-800' :
-                                                        att.status === 'Absent' ? 'bg-red-100 text-red-800' :
-                                                        'bg-yellow-100 text-yellow-800'
-                                                    }`}>{att.status}</span>
-                                                </td>
-                                            </tr>
-                                        )) : (
-                                            <tr><td colSpan={2} className="text-center p-4 text-slate-500">No attendance records found.</td></tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    )}
+                    
                     {activeTab === 'financials' && (
-                        <div className="space-y-6 animate-fade-in">
-                            <div className="flex flex-col md:flex-row justify-around bg-slate-50 p-4 rounded-lg gap-4">
-                                <div className="text-center"><p className="text-sm text-slate-500">Total Fees</p><p className="font-bold text-2xl text-blue-600">GHS {student.financials.totalFees.toFixed(2)}</p></div>
-                                <div className="text-center"><p className="text-sm text-slate-500">Total Paid</p><p className="font-bold text-2xl text-green-600">GHS {student.financials.paid.toFixed(2)}</p></div>
-                                <div className="text-center"><p className="text-sm text-slate-500">Balance Outstanding</p><p className="font-bold text-2xl text-red-600">GHS {student.financials.balance.toFixed(2)}</p></div>
-                            </div>
-                            
-                            {!isViewOnly && <div className="no-print">
-                                <h3 className="font-bold text-lg text-slate-800 mb-2">Add New Payment</h3>
-                                <form onSubmit={handleAddPayment} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end bg-white p-4 rounded-lg border">
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700" htmlFor="payment-date">Date</label>
-                                        <input id="payment-date" type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700" htmlFor="payment-amount">Amount</label>
-                                        <input id="payment-amount" type="number" placeholder="0.00" step="0.01" value={paymentAmount} onChange={e => setPaymentAmount(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-slate-700" htmlFor="receipt-number">Receipt Number</label>
-                                        <input id="receipt-number" type="text" value={receiptNumber} onChange={e => setReceiptNumber(e.target.value)} required className="mt-1 w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500" />
-                                    </div>
-                                    <button type="submit" className="w-full px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors h-fit">Add Payment</button>
-                                </form>
-                            </div>}
-
-                            <div>
-                                <h3 className="font-bold text-lg mb-2 text-slate-800">Payment History</h3>
-                                <div className="max-h-60 overflow-y-auto pr-2 bg-slate-50 p-2 rounded-lg border">
-                                    {sortedPayments.length > 0 ? (
-                                        <ul className="space-y-2">
-                                            {sortedPayments.map(p => (
-                                                <li key={p.receipt} className="flex justify-between items-center p-3 bg-white rounded-md shadow-sm">
-                                                    <div>
-                                                        <p className="font-medium text-slate-800">GHS {p.amount.toFixed(2)}</p>
-                                                        <p className="text-xs text-slate-500">{p.date}</p>
-                                                    </div>
-                                                    <span className="text-sm font-mono bg-slate-100 px-2 py-1 rounded">Receipt: {p.receipt}</span>
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    ) : (
-                                        <p className="text-slate-500 text-center p-4">No payment history found.</p>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                    {activeTab === 'notes' && (
                         <div className="animate-fade-in">
-                            <h3 className="font-bold text-lg text-slate-800 mb-4">Private Notes</h3>
-                            <div className="space-y-4 mb-6 max-h-60 overflow-y-auto pr-2 border-b pb-4">
-                                {student.privateNotes.length > 0 ? [...student.privateNotes].reverse().map((note, index) => (
-                                    <div key={index} className="p-3 bg-slate-50 rounded-lg border">
-                                        <p className="text-slate-700 whitespace-pre-wrap">{note.content}</p>
-                                        <p className="text-xs text-slate-500 text-right mt-1">- {note.author} on {note.date}</p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Left Side: Summary and Actions */}
+                                <div className="bg-slate-50 p-4 rounded-lg border">
+                                    <h3 className="font-bold text-lg text-slate-800 mb-4">Financial Overview</h3>
+                                    <div className="space-y-2 text-sm">
+                                        <div className="flex justify-between"><span>Total Bill:</span> <span className="font-semibold">GHS {financialsSummary.totalFees.toFixed(2)}</span></div>
+                                        <div className="flex justify-between"><span>Discounts:</span> <span className="font-semibold text-green-600">- GHS {financialsSummary.totalDiscounts.toFixed(2)}</span></div>
+                                        <div className="flex justify-between font-bold border-t pt-2"><span>Net Bill:</span> <span>GHS {(financialsSummary.totalFees - financialsSummary.totalDiscounts).toFixed(2)}</span></div>
+                                        <div className="flex justify-between"><span>Paid:</span> <span className="font-semibold">GHS {financialsSummary.paid.toFixed(2)}</span></div>
+                                        <div className={`flex justify-between font-bold text-lg border-t pt-2 mt-2 ${financialsSummary.balance > 0 ? 'text-red-600' : 'text-green-600'}`}><span>Balance:</span> <span>GHS {financialsSummary.balance.toFixed(2)}</span></div>
                                     </div>
-                                )) : (
-                                    <p className="text-slate-500">No private notes for this student.</p>
-                                )}
-                            </div>
-                            <div className="no-print">
-                                <h4 className="font-semibold text-slate-800 mb-2">Add a New Note</h4>
-                                <textarea
-                                    value={newNoteContent}
-                                    onChange={e => setNewNoteContent(e.target.value)}
-                                    placeholder="Add a private note..."
-                                    className="w-full p-2 border border-slate-300 rounded-lg h-20 focus:outline-none focus:ring-2 focus:ring-sky-500"
-                                    rows={3}
-                                />
-                                <div className="flex justify-end mt-2">
-                                    <button onClick={handleAddNote} className="bg-sky-600 text-white px-4 py-2 rounded-lg hover:bg-sky-700 transition-colors text-sm">Add Note</button>
+                                    {canEdit && <div className="mt-6 space-y-2">
+                                        <ManageFeeItemModal onSave={handleAddFeeItem} />
+                                        <ManageDiscountModal onSave={handleApplyDiscount} />
+                                    </div>}
+                                </div>
+
+                                {/* Right Side: Details */}
+                                <div className="space-y-6">
+                                    <div>
+                                        <h4 className="font-semibold text-slate-700 mb-2">Fee Items</h4>
+                                        <ul className="text-sm space-y-1">{student.financials.feeItems.map((item, i) => <li key={i} className="flex justify-between bg-white p-2 border rounded"><span>{item.category}</span><span>{item.amount.toFixed(2)}</span></li>)}</ul>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-semibold text-slate-700 mb-2">Discounts Applied</h4>
+                                        <ul className="text-sm space-y-1">{student.financials.discounts.map((d, i) => <li key={i} className="flex justify-between bg-white p-2 border rounded"><span>{d.type} {d.description ? `(${d.description})` : ''}</span><span className="text-green-600">- {d.amount.toFixed(2)}</span></li>)}</ul>
+                                    </div>
+                                    <div>
+                                        <h4 className="font-semibold text-slate-700 mb-2">Payment History</h4>
+                                        <ul className="text-sm space-y-1">{student.financials.payments.map((p, i) => <li key={i} className="flex justify-between bg-white p-2 border rounded"><span>{p.date} ({p.receipt})</span><span>{p.amount.toFixed(2)}</span></li>)}</ul>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     )}
+                    
+                    {activeTab === 'documents' && (
+                         <div className="animate-fade-in">
+                             <h3 className="font-bold text-lg text-slate-800 mb-4">Student Documents</h3>
+                             {canEdit && (
+                                <form onSubmit={handleAddDocument} className="mb-6 p-4 bg-slate-50 border rounded-lg flex items-end space-x-4">
+                                    <div className="flex-grow">
+                                        <label className="block text-sm font-medium text-slate-700">Document Name</label>
+                                        <input type="text" value={docName} onChange={e => setDocName(e.target.value)} className="mt-1 w-full p-2 border border-slate-300 rounded-lg"/>
+                                    </div>
+                                     <div className="flex-grow">
+                                        <label className="block text-sm font-medium text-slate-700">File</label>
+                                        <input type="file" ref={docFileRef} className="mt-1 w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>
+                                    </div>
+                                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Upload</button>
+                                </form>
+                             )}
+                             <div className="space-y-2">
+                                {student.documents && student.documents.length > 0 ? (
+                                    student.documents.map((doc, i) => (
+                                        <div key={i} className="flex justify-between items-center p-2 bg-white border rounded">
+                                            <span>{doc.name}</span>
+                                            <span className="text-sm text-slate-500">{doc.date}</span>
+                                        </div>
+                                    ))
+                                ) : <p className="text-slate-500">No documents uploaded.</p>}
+                             </div>
+                         </div>
+                    )}
+
                 </div>
             </div>
         </div>
-        {reportToPrint && <PrintableReportCardModal report={reportToPrint} student={student} onClose={() => setReportToPrint(null)} />}
-        {isPromoteModalOpen && <PromoteStudentModal student={student} onClose={() => setPromoteModalOpen(false)} onSave={(...args) => { onPromoteStudent(...args); setPromoteModalOpen(false); }} />}
-        {isArchiveModalOpen && <ConfirmationModal title="Archive Student" message={<>Are you sure you want to archive <strong>{student.name}</strong>? Their profile will be hidden from the main list but can be viewed in the archives.</>} confirmText="Archive" confirmClass="bg-yellow-500 hover:bg-yellow-600" onConfirm={() => { onArchiveStudent(student.id); setArchiveModalOpen(false); }} onClose={() => setArchiveModalOpen(false)} />}
-        {isDeleteModalOpen && <ConfirmationModal title="Delete Student" message={<>Are you sure you want to permanently delete the record for <strong>{student.name}</strong>? This action cannot be undone.</>} confirmText="Delete" confirmClass="bg-red-600 hover:bg-red-700" onConfirm={() => { onDeleteStudent(student.id); setDeleteModalOpen(false); }} onClose={() => setDeleteModalOpen(false)} />}
+        
+        {isPromoteModalOpen && <PromoteStudentModal student={student} onClose={() => setPromoteModalOpen(false)} onSave={onPromoteStudent} />}
+        {isArchiveModalOpen && (
+            <ConfirmationModal
+                title="Archive Student"
+                message={<>Are you sure you want to archive <strong>{student.name}</strong>? This will hide them from the main list but their data will be preserved.</>}
+                confirmText="Archive"
+                confirmClass="bg-yellow-500 hover:bg-yellow-600"
+                onConfirm={() => { onArchiveStudent(student.id); setArchiveModalOpen(false); }}
+                onClose={() => setArchiveModalOpen(false)}
+            />
+        )}
+        {isDeleteModalOpen && (
+            <ConfirmationModal
+                title="Delete Student"
+                message={<>Are you sure you want to permanently delete <strong>{student.name}</strong>? This action cannot be undone.</>}
+                confirmText="Delete"
+                confirmClass="bg-red-600 hover:bg-red-700"
+                onConfirm={() => { onDeleteStudent(student.id); setDeleteModalOpen(false); }}
+                onClose={() => setDeleteModalOpen(false)}
+            />
+        )}
+        {reportToPrint && <PrintableReportCardModal report={reportToPrint} student={student} onClose={() => setReportToPrint(null)} academicYear={academicYear} currentTerm={currentTerm} />}
+        {isChangePasswordModalOpen && (
+            <AdminChangePasswordModal
+                userToUpdate={{ id: student.id, name: student.guardianName, role: Role.Parent }}
+                onClose={() => setChangePasswordModalOpen(false)}
+                onSave={(userId, newPassword) => {
+                    onAdminPasswordChange(userId, newPassword);
+                    setChangePasswordModalOpen(false);
+                }}
+            />
+        )}
         </>
     );
 };
 
+const ManageFeeItemModal: React.FC<{onSave: (feeItem: {category: string, amount: number}) => void}> = ({ onSave }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [category, setCategory] = useState('');
+    const [amount, setAmount] = useState('');
 
-export const Students: React.FC<{ user: User }> = ({ user }) => {
-    const [students, setStudents] = useState<Student[]>(mockStudents);
+    const handleSubmit = () => {
+        const numAmount = parseFloat(amount);
+        if (category.trim() && !isNaN(numAmount) && numAmount > 0) {
+            onSave({ category, amount: numAmount });
+            setIsOpen(false);
+            setCategory('');
+            setAmount('');
+        } else {
+            alert('Please enter a valid category and amount.');
+        }
+    };
+
+    return <>
+        <button onClick={() => setIsOpen(true)} className="w-full text-sm bg-blue-500 text-white px-3 py-1.5 rounded-md hover:bg-blue-600 transition-colors">Add Fee Item</button>
+        {isOpen && (
+             <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+                <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-sm animate-fade-in-up">
+                    <h2 className="text-xl font-bold text-slate-800 mb-4">Add Custom Fee Item</h2>
+                    <div className="space-y-4">
+                        <div><label className="text-sm">Category</label><input type="text" value={category} onChange={e => setCategory(e.target.value)} className="w-full p-2 mt-1 border rounded"/></div>
+                        <div><label className="text-sm">Amount</label><input type="number" value={amount} onChange={e => setAmount(e.target.value)} className="w-full p-2 mt-1 border rounded"/></div>
+                    </div>
+                    <div className="flex justify-end space-x-4 mt-6">
+                        <button onClick={() => setIsOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg">Cancel</button>
+                        <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 text-white rounded-lg">Add Fee</button>
+                    </div>
+                </div>
+            </div>
+        )}
+    </>
+}
+
+const ManageDiscountModal: React.FC<{ onSave: (discount: Discount) => void }> = ({ onSave }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [type, setType] = useState<DiscountType>('Sibling');
+    const [amount, setAmount] = useState('');
+    const [description, setDescription] = useState('');
+
+    const handleSubmit = () => {
+        const numAmount = parseFloat(amount);
+        if (type && !isNaN(numAmount) && numAmount > 0) {
+            onSave({ type, amount: numAmount, description });
+            setIsOpen(false);
+            setAmount('');
+            setDescription('');
+        } else {
+            alert('Please select a type and enter a valid amount.');
+        }
+    };
+    
+    return <>
+        <button onClick={() => setIsOpen(true)} className="w-full text-sm bg-green-500 text-white px-3 py-1.5 rounded-md hover:bg-green-600 transition-colors">Apply Discount</button>
+        {isOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
+                <div className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-sm animate-fade-in-up">
+                    <h2 className="text-xl font-bold text-slate-800 mb-4">Apply Discount</h2>
+                    <div className="space-y-4">
+                        <div><label className="text-sm">Discount Type</label><select value={type} onChange={e => setType(e.target.value as DiscountType)} className="w-full p-2 mt-1 border rounded">{DISCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                        <div><label className="text-sm">Amount</label><input type="number" value={amount} onChange={e => setAmount(e.target.value)} className="w-full p-2 mt-1 border rounded"/></div>
+                        <div><label className="text-sm">Description (Optional)</label><input type="text" value={description} onChange={e => setDescription(e.target.value)} className="w-full p-2 mt-1 border rounded"/></div>
+                    </div>
+                    <div className="flex justify-end space-x-4 mt-6">
+                        <button onClick={() => setIsOpen(false)} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg">Cancel</button>
+                        <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 text-white rounded-lg">Apply Discount</button>
+                    </div>
+                </div>
+            </div>
+        )}
+    </>
+}
+
+export const Students: React.FC<{ 
+    user: User, 
+    students: Student[], 
+    onUpdateStudent: (student: Student) => void, 
+    onAddStudent: (student: Student) => void, 
+    onAdminPasswordChange: (userId: string, newPassword: string) => void,
+    academicYear: string, 
+    currentTerm: string 
+}> = ({ user, students: allStudents, onUpdateStudent, onAddStudent, onAdminPasswordChange, academicYear, currentTerm }) => {
+    const [students, setStudents] = useState<Student[]>(allStudents);
     const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+    const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedClass, setSelectedClass] = useState('All');
-    const [sortOption, setSortOption] = useState<'name' | 'id' | 'class'>('name');
-    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const [filterGender, setFilterGender] = useState('All');
-    const [filterDobStart, setFilterDobStart] = useState('');
-    const [filterDobEnd, setFilterDobEnd] = useState('');
-    const [viewMode, setViewMode] = useState<'active' | 'archived'>('active');
+    const [isAddModalOpen, setAddModalOpen] = useState(false);
 
-    const canAddStudent = useMemo(() => user.role === Role.Admin || user.role === Role.Headteacher || user.role === Role.Teacher, [user.role]);
+    useEffect(() => {
+        setStudents(allStudents);
+    }, [allStudents]);
+
+    const handlePromoteStudent = (studentId: string, newClass: string, isRepeating: boolean) => {
+        const student = students.find(s => s.id === studentId);
+        if (student) {
+            const classHistory = isRepeating ? student.classHistory : [...student.classHistory, newClass];
+            onUpdateStudent({ ...student, currentClass: newClass, classHistory });
+        }
+    };
     
-    const filteredStudents = useMemo(() => {
-        let results = students.filter(student => {
-            const lowerSearchTerm = searchTerm.toLowerCase();
-            const matchesSearch = 
-                student.name.toLowerCase().includes(lowerSearchTerm) || 
-                student.id.toLowerCase().includes(lowerSearchTerm) ||
-                student.guardianName.toLowerCase().includes(lowerSearchTerm) ||
-                student.enrolmentDate.includes(searchTerm);
-            const matchesClass = selectedClass === 'All' || student.currentClass === selectedClass;
-            const matchesGender = filterGender === 'All' || student.gender === filterGender;
-            const matchesStatus = student.status === viewMode;
+    const handleArchiveStudent = (studentId: string) => {
+        const student = students.find(s => s.id === studentId);
+        if (student) onUpdateStudent({ ...student, status: 'archived' });
+        setSelectedStudent(null);
+    };
 
-            let matchesDob = true;
-            if (filterDobStart && filterDobEnd) {
-                matchesDob = student.dateOfBirth >= filterDobStart && student.dateOfBirth <= filterDobEnd;
-            } else if (filterDobStart) {
-                matchesDob = student.dateOfBirth >= filterDobStart;
-            } else if (filterDobEnd) {
-                matchesDob = student.dateOfBirth <= filterDobEnd;
-            }
-            
-            return matchesSearch && matchesClass && matchesGender && matchesDob && matchesStatus;
-        });
+    const handleDeleteStudent = (studentId: string) => {
+        setStudents(prev => prev.filter(s => s.id !== studentId)); // This is a destructive action, usually not recommended.
+        setSelectedStudent(null);
+    };
 
-        results.sort((a, b) => {
-            switch (sortOption) {
-                case 'id':
-                    return a.id.localeCompare(b.id);
-                case 'class':
-                    return CLASSES.indexOf(a.currentClass) - CLASSES.indexOf(b.currentClass);
-                case 'name':
-                default:
-                    return a.name.localeCompare(b.name);
-            }
-        });
-        
-        return results;
-    }, [searchTerm, selectedClass, students, sortOption, filterGender, filterDobStart, filterDobEnd, viewMode]);
-
-    const generateNewStudentId = useCallback(() => {
-        const year = new Date().getFullYear();
-        const nextSequence = students.length; 
-        return `CCS${year}${nextSequence.toString().padStart(3, '0')}`;
-    }, [students]);
-
-    const handleAddStudent = useCallback((newStudentData: Omit<Student, 'id' | 'classHistory' | 'positionsHeld' | 'interests' | 'awards' | 'financials' | 'attendance' | 'grades' | 'privateNotes' | 'status' | 'parentPasswordHash'> & { photoUrl: string | null }) => {
+    const handleAddStudent = (newStudentData: Omit<Student, 'id' | 'classHistory' | 'positionsHeld' | 'interests' | 'awards' | 'financials' | 'attendance' | 'grades' | 'privateNotes' | 'status' | 'documents'>) => {
         const newStudent: Student = {
-            name: newStudentData.name,
-            dateOfBirth: newStudentData.dateOfBirth,
-            gender: newStudentData.gender,
-            guardianName: newStudentData.guardianName,
-            guardianContact: newStudentData.guardianContact,
-            guardianEmail: newStudentData.guardianEmail,
-            enrolmentDate: newStudentData.enrolmentDate,
-            currentClass: newStudentData.currentClass,
-            id: generateNewStudentId(),
-            photoUrl: newStudentData.photoUrl || DEFAULT_AVATAR_URL,
+            ...newStudentData,
+            id: generateNewStudentId(newStudentData.enrolmentDate, students),
             classHistory: [newStudentData.currentClass],
             positionsHeld: [],
             interests: [],
             awards: [],
-            financials: {
-                totalFees: 700 + Math.floor(Math.random() * 200),
-                paid: 0,
-                balance: 0,
-                payments: [],
-            },
+            financials: { feeItems: [], discounts: [], payments: [] },
             attendance: [],
             grades: [],
             privateNotes: [],
+            documents: [],
             status: 'active',
-            parentPasswordHash: '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8', // Default: 'password'
         };
-        newStudent.financials.balance = newStudent.financials.totalFees;
-
-        setStudents(prev => [...prev, newStudent].sort((a,b) => a.name.localeCompare(b.name)));
-        setIsAddModalOpen(false);
-    }, [students, generateNewStudentId]);
+        onAddStudent(newStudent);
+        setAddModalOpen(false);
+    };
     
-    const handleUpdateStudent = (updatedStudent: Student) => {
-        setStudents(prevStudents => 
-            prevStudents.map(s => s.id === updatedStudent.id ? updatedStudent : s)
-        );
-        setSelectedStudent(updatedStudent);
-    };
-
-    const handleDeleteStudent = (studentId: string) => {
-        setStudents(prev => prev.filter(s => s.id !== studentId));
-        setSelectedStudent(null);
-    };
-    const handleArchiveStudent = (studentId: string) => {
-        setStudents(prev => prev.map(s => s.id === studentId ? { ...s, status: 'archived' } : s));
-        setSelectedStudent(null);
-    };
-    const handlePromoteStudent = (studentId: string, newClass: string, isRepeating: boolean) => {
-         setStudents(prevStudents => {
-            const newStudents = prevStudents.map(s => {
-                if (s.id === studentId) {
-                    const updatedStudent = { ...s, currentClass: newClass };
-                    if (!isRepeating && !updatedStudent.classHistory.includes(newClass)) {
-                        updatedStudent.classHistory = [...updatedStudent.classHistory, newClass];
-                    }
-                    // Update the selected student in the details view immediately
-                    setSelectedStudent(updatedStudent);
-                    return updatedStudent;
-                }
-                return s;
-            });
-            return newStudents;
+    const filteredStudents = useMemo(() => {
+        return students.filter(student => {
+            const matchesStatus = student.status === viewMode;
+            const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase()) || student.id.toLowerCase().includes(searchTerm.toLowerCase());
+            const matchesClass = selectedClass === 'All' || student.currentClass === selectedClass;
+            return matchesStatus && matchesSearch && matchesClass;
         });
-    };
-    
-    if (selectedStudent) {
-        return <StudentDetails 
-            user={user}
-            student={selectedStudent} 
-            onBack={() => setSelectedStudent(null)} 
-            onUpdateStudent={handleUpdateStudent}
-            onPromoteStudent={handlePromoteStudent}
-            onArchiveStudent={handleArchiveStudent}
-            onDeleteStudent={handleDeleteStudent}
-        />;
-    }
+    }, [students, viewMode, searchTerm, selectedClass]);
 
+
+    if (selectedStudent) {
+        return (
+            <div className="p-4 sm:p-6 lg:p-8">
+                <StudentDetails 
+                    user={user} 
+                    student={selectedStudent} 
+                    onBack={() => setSelectedStudent(null)} 
+                    onUpdateStudent={onUpdateStudent}
+                    onPromoteStudent={handlePromoteStudent}
+                    onArchiveStudent={handleArchiveStudent}
+                    onDeleteStudent={handleDeleteStudent}
+                    onAdminPasswordChange={onAdminPasswordChange}
+                    academicYear={academicYear}
+                    currentTerm={currentTerm}
+                />
+            </div>
+        );
+    }
+    
     return (
         <div className="p-4 sm:p-6 lg:p-8">
             <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
-                 <h1 className="text-3xl font-bold text-slate-800">Student Management</h1>
-                 <div className="flex items-center space-x-2 rounded-lg bg-slate-200 p-1">
-                    <button onClick={() => setViewMode('active')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${viewMode === 'active' ? 'bg-white shadow text-slate-800' : 'text-slate-600 hover:bg-slate-300'}`}>Active</button>
-                    <button onClick={() => setViewMode('archived')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${viewMode === 'archived' ? 'bg-white shadow text-slate-800' : 'text-slate-600 hover:bg-slate-300'}`}>Archived</button>
+                <h1 className="text-3xl font-bold text-slate-800">Student Management</h1>
+                 <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-2 rounded-lg bg-slate-200 p-1">
+                        <button onClick={() => setViewMode('active')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${viewMode === 'active' ? 'bg-white shadow text-slate-800' : 'text-slate-600 hover:bg-slate-300'}`}>Active</button>
+                        <button onClick={() => setViewMode('archived')} className={`px-3 py-1 text-sm font-medium rounded-md transition-colors ${viewMode === 'archived' ? 'bg-white shadow text-slate-800' : 'text-slate-600 hover:bg-slate-300'}`}>Archived</button>
+                    </div>
+                    {user.role !== Role.SMCChair && <button onClick={() => setAddModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">Add New Student</button>}
                 </div>
             </div>
-           
-            <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <div className="mb-6 flex flex-col sm:flex-row gap-4">
                 <input 
                     type="text"
-                    placeholder="Search by name, ID, guardian..."
+                    placeholder="Search by name or ID..."
                     value={searchTerm}
                     onChange={e => setSearchTerm(e.target.value)}
-                    className="p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500 lg:col-span-2"
+                    className="flex-grow p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <select 
                     value={selectedClass} 
                     onChange={e => setSelectedClass(e.target.value)}
-                    className="p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    className="p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                     <option value="All">All Classes</option>
                     {CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-                <select 
-                    value={filterGender} 
-                    onChange={e => setFilterGender(e.target.value)}
-                    className="p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                >
-                    <option value="All">All Genders</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                </select>
-                 <select 
-                    value={sortOption} 
-                    onChange={e => setSortOption(e.target.value as 'name' | 'id' | 'class')}
-                    className="p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                >
-                    <option value="name">Sort by Name</option>
-                    <option value="id">Sort by ID</option>
-                    <option value="class">Sort by Class</option>
-                </select>
-                <div className="flex items-center space-x-2 lg:col-span-2">
-                    <label className="text-sm text-slate-600">DOB:</label>
-                    <input 
-                        type="date"
-                        value={filterDobStart}
-                        onChange={e => setFilterDobStart(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                        title="Date of Birth (Start)"
-                    />
-                    <span className="text-slate-500">-</span>
-                    <input 
-                        type="date"
-                        value={filterDobEnd}
-                        onChange={e => setFilterDobEnd(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500"
-                        title="Date of Birth (End)"
-                    />
-                </div>
-                <div className="lg:col-span-2"></div>
-                {canAddStudent && <button onClick={() => setIsAddModalOpen(true)} className="bg-sky-600 text-white px-4 py-2 rounded-lg hover:bg-sky-700 transition-colors whitespace-nowrap h-full">Add New Student</button>}
             </div>
-            
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {filteredStudents.map(student => (
                     <StudentCard key={student.id} student={student} onSelect={setSelectedStudent} />
                 ))}
             </div>
-            {filteredStudents.length === 0 && <p className="text-center text-slate-500 mt-8">No {viewMode} students found.</p>}
-
-            {isAddModalOpen && (
-                <AddStudentModal 
-                    onClose={() => setIsAddModalOpen(false)}
-                    onSave={handleAddStudent}
-                    nextId={generateNewStudentId()}
-                />
-            )}
+             {filteredStudents.length === 0 && <p className="text-center text-slate-500 mt-8">No {viewMode} students found.</p>}
+            {isAddModalOpen && <AddStudentModal onClose={() => setAddModalOpen(false)} onSave={handleAddStudent} students={students} />}
         </div>
     );
 };
