@@ -169,7 +169,7 @@ const StaffDetails: React.FC<{
         if(docFileRef.current) docFileRef.current.value = '';
     };
 
-    const renderField = (label: string, value: any, name: string, type: 'text' | 'textarea' | 'number' | 'email' | 'tel' | 'select' = 'text', options: string[] = []) => (
+    const renderField = (label: string, value: any, name: string, type: 'text' | 'textarea' | 'number' | 'email' | 'tel' | 'select' = 'text', options: string[] = [], otherProps: Record<string, any> = {}) => (
          <div>
             <strong className="block mb-1 text-sm text-slate-600">{label}</strong>
             {isEditing ? (
@@ -177,7 +177,7 @@ const StaffDetails: React.FC<{
                  <textarea name={name} value={Array.isArray(value) ? value.join(', ') : value} onChange={handleChange} className="w-full p-2 border rounded-md border-slate-300 bg-white focus:ring-2 focus:ring-blue-500" rows={2}/>
                  : type === 'select' ?
                  <select name={name} value={value} onChange={handleChange} className="w-full p-2 border rounded-md border-slate-300 bg-white focus:ring-2 focus:ring-blue-500">{options.map(o => <option key={o} value={o}>{o}</option>)}</select>
-                 : <input type={type} name={name} value={value} onChange={handleChange} className="w-full p-2 border rounded-md border-slate-300 bg-white focus:ring-2 focus:ring-blue-500"/>
+                 : <input type={type} name={name} value={value} onChange={handleChange} className="w-full p-2 border rounded-md border-slate-300 bg-white focus:ring-2 focus:ring-blue-500" {...otherProps}/>
             ) : (
                 <p className="p-2 bg-slate-50 rounded-md min-h-[40px]">{Array.isArray(value) ? value.join(', ') || 'N/A' : value}</p>
             )}
@@ -245,7 +245,7 @@ const StaffDetails: React.FC<{
                                    {renderField('Full Name', editableStaff.name, 'name')}
                                    {renderField('Email Address', editableStaff.email, 'email', 'email')}
                                    {renderField('Contact Number', editableStaff.contact, 'contact', 'tel')}
-                                   {renderField('Year of Employment', editableStaff.employmentYear, 'employmentYear', 'number')}
+                                   {renderField('Year of Employment', editableStaff.employmentYear, 'employmentYear', 'number', [], { min: 1950, max: new Date().getFullYear() })}
                                    {renderField('Employment Type', editableStaff.employmentType, 'employmentType', 'select', ['Full-time', 'Part-time', 'Volunteer'])}
                                    <div className="sm:col-span-2">{renderField('Qualifications', editableStaff.qualifications, 'qualifications', 'textarea')}</div>
                                    {renderField("Emergency Contact Name", editableStaff.emergencyContact.name, 'emergencyContact.name')}
@@ -288,12 +288,17 @@ const StaffDetails: React.FC<{
                                         <h3 className="font-bold text-lg text-slate-800 mb-2">Administrative Actions</h3>
                                         <div className="flex flex-wrap gap-2">
                                             <button onClick={() => setManageAccountModalOpen(true)} className="text-sm bg-slate-600 text-white px-3 py-1.5 rounded-md hover:bg-slate-700 transition-colors">{userAccount ? 'Manage Account' : 'Create Account'}</button>
-                                            {staff.status === 'active' &&
+                                            {staff.status === 'active' ? (
                                                 <>
                                                     <button onClick={() => setArchiveModalOpen(true)} className="text-sm bg-yellow-500 text-white px-3 py-1.5 rounded-md hover:bg-yellow-600">Archive</button>
                                                     <button onClick={() => setDeleteModalOpen(true)} className="text-sm bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700">Delete</button>
                                                 </>
-                                            }
+                                            ) : (
+                                                 <>
+                                                    <button onClick={() => { onUpdate({ ...staff, status: 'active' }); onBack(); }} className="text-sm bg-green-500 text-white px-3 py-1.5 rounded-md hover:bg-green-600">Activate Profile</button>
+                                                    <button onClick={() => setDeleteModalOpen(true)} className="text-sm bg-red-600 text-white px-3 py-1.5 rounded-md hover:bg-red-700">Delete</button>
+                                                 </>
+                                            )}
                                         </div>
                                     </div>
                                 )}
@@ -370,12 +375,21 @@ const AddStaffModal: React.FC<{
         category: StaffCategory.Teaching,
         employmentType: 'Full-time',
         employmentYear: new Date().getFullYear(),
+        emergencyContact: { name: '', phone: '' },
     });
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        setNewStaff(prev => ({...prev, [name]: value}));
+        if (name.startsWith('emergencyContact.')) {
+            const field = name.split('.')[1] as 'name' | 'phone';
+            setNewStaff(prev => ({
+                ...prev,
+                emergencyContact: { ...prev.emergencyContact!, [field]: value }
+            }));
+        } else {
+            setNewStaff(prev => ({...prev, [name]: value}));
+        }
     }
 
     const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -443,8 +457,10 @@ const AddStaffModal: React.FC<{
                         <option value="Volunteer">Volunteer</option>
                     </select>
                     <input name="contact" onChange={handleChange} placeholder="Contact Number" className="p-2 border rounded"/>
-                    <input name="employmentYear" type="number" value={newStaff.employmentYear} onChange={handleChange} placeholder="Employment Year" className="p-2 border rounded"/>
+                    <input name="employmentYear" type="number" min="1950" max={new Date().getFullYear()} value={newStaff.employmentYear} onChange={handleChange} placeholder="Employment Year" className="p-2 border rounded"/>
                     <textarea name="qualifications" onChange={handleChange} placeholder="Qualifications (comma-separated)" className="md:col-span-2 p-2 border rounded" />
+                    <input name="emergencyContact.name" value={newStaff.emergencyContact?.name || ''} onChange={handleChange} placeholder="Emergency Contact Name" className="p-2 border rounded"/>
+                    <input name="emergencyContact.phone" value={newStaff.emergencyContact?.phone || ''} onChange={handleChange} placeholder="Emergency Contact Phone" className="p-2 border rounded"/>
                 </div>
                 <div className="flex justify-end space-x-4 pt-4">
                     <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-200 text-slate-800 rounded-lg">Cancel</button>
