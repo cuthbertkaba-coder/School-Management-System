@@ -151,15 +151,16 @@ const ReportGeneration: React.FC<{
                 </thead>
                 <tbody>
                     {students.map(student => {
-                        const gradeData = student.grades.find(g => g.term === term) || {};
+// Fix: Use optional chaining (`?.`) to safely access properties on `gradeData`, which can be undefined if no grade record exists for the term. Provide a fallback empty string for `defaultValue`.
+                        const gradeData = student.grades.find(g => g.term === term);
                         return (
                             <tr key={student.id} className="bg-white border-b hover:bg-slate-50">
                                 <td className="px-4 py-2 font-medium text-slate-900">{student.name}</td>
-                                <td className="px-4 py-2"><textarea className="w-full p-1 border rounded bg-white focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100" defaultValue={gradeData.teacherComment} onBlur={e => handleCommentChange(student.id, 'teacherComment', e.target.value)} /></td>
-                                <td className="px-4 py-2"><textarea className="w-full p-1 border rounded bg-white focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100" defaultValue={gradeData.headteacherComment} onBlur={e => handleCommentChange(student.id, 'headteacherComment', e.target.value)} /></td>
+                                <td className="px-4 py-2"><textarea className="w-full p-1 border rounded bg-white focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100" defaultValue={gradeData?.teacherComment || ''} onBlur={e => handleCommentChange(student.id, 'teacherComment', e.target.value)} /></td>
+                                <td className="px-4 py-2"><textarea className="w-full p-1 border rounded bg-white focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100" defaultValue={gradeData?.headteacherComment || ''} onBlur={e => handleCommentChange(student.id, 'headteacherComment', e.target.value)} /></td>
                                 {term === 'Third Term' && (
                                     <td className="px-4 py-2">
-                                        <select className="w-full p-1 border rounded" defaultValue={gradeData.promotionStatus} onChange={e => handlePromotionChange(student.id, e.target.value as any)}>
+                                        <select className="w-full p-1 border rounded" defaultValue={gradeData?.promotionStatus || ''} onChange={e => handlePromotionChange(student.id, e.target.value as any)}>
                                             <option value="">Select...</option>
                                             <option value="Promoted">Promoted</option>
                                             <option value="To Repeat">To Repeat</option>

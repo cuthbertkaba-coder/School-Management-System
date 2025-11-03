@@ -81,7 +81,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, students, users, staff })
 
   return (
     <div className="min-h-screen bg-slate-200 flex flex-col justify-center items-center p-4">
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-8 text-center">
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-6 sm:p-8 text-center">
         <img src={SCHOOL_LOGO_URL} alt="School Logo" className="w-24 h-24 mx-auto mb-4 rounded-full shadow-lg" />
         <h1 className="text-2xl font-bold text-slate-800">{SCHOOL_NAME}</h1>
         <p className="text-sm text-slate-500 italic mb-6">"{SCHOOL_MOTTO}"</p>
@@ -94,6 +94,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, students, users, staff })
             onChange={(e) => { setUsername(e.target.value); setError(''); }}
             className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             autoCapitalize="none"
+            autoComplete="username"
           />
           <input
             type="password"
@@ -101,6 +102,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, students, users, staff })
             value={password}
             onChange={(e) => { setPassword(e.target.value); setError(''); }}
             className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            autoComplete="current-password"
           />
           {error && <p className="text-red-500 text-sm text-left pt-1">{error}</p>}
           <div className="pt-2">
@@ -113,11 +115,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin, students, users, staff })
             </button>
           </div>
         </form>
-         <div className="text-center mt-4">
+         <div className="text-center mt-4 -mx-2 -my-1">
           <a
             href="#"
             onClick={(e) => { e.preventDefault(); setForgotPasswordOpen(true); }}
-            className="text-sm text-blue-600 hover:underline"
+            className="inline-block px-2 py-1 text-sm text-blue-600 hover:underline rounded"
           >
             Forgot Password?
           </a>
