@@ -19,3 +19,4 @@ View your app in AI Studio: https://ai.studio/apps/drive/1flfKMyWVeN-YT7jZyKw8Y3
 3. Run the app:
    `npm run dev`
 # School-Management-System-v3.0
+# School-Management-System-v3.0
